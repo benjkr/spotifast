@@ -1061,6 +1061,14 @@ pub enum Action {
     ToggleMute,
     ToggleShuffle,
     CycleRepeat,
+    /// Turn repeating a section of the playing song on or off. Turning it
+    /// on for a new song starts the section where the song is.
+    ToggleSectionLoop,
+    /// Repeat `start_ms..end_ms` of the playing song, turning it on.
+    SetSectionLoop {
+        start_ms: u32,
+        end_ms: u32,
+    },
     SetShuffle(bool),
     SetRepeat(crate::player::RepeatMode),
     AddToQueue {

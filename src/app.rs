@@ -173,6 +173,36 @@ pub struct NowPlaying {
     pub resuming: bool,
 }
 
+/// A stretch of one song that playback returns to while it is on. Another
+/// song starting forgets it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SectionLoop {
+    pub uri: String,
+    pub start_ms: u32,
+    pub end_ms: u32,
+    pub on: bool,
+}
+
+/// How long a section turned on without chosen ends lasts.
+const SECTION_DEFAULT_MS: u32 = 30_000;
+/// The shortest section, so its two ends never meet.
+pub const SECTION_MIN_MS: u32 = 1_000;
+/// A section that runs to the song's end jumps back this much earlier, or
+/// the player would move on to the next song first.
+const SECTION_END_MARGIN_MS: u32 = 500;
+
+/// `start_ms..end_ms` in order, inside a song of `duration_ms`, and at least
+/// [`SECTION_MIN_MS`] long where the song allows.
+pub fn section_bounds(start_ms: u32, end_ms: u32, duration_ms: u32) -> (u32, u32) {
+    let (start, end) = if start_ms <= end_ms {
+        (start_ms, end_ms)
+    } else {
+        (end_ms, start_ms)
+    };
+    let end = end.min(duration_ms).max(SECTION_MIN_MS.min(duration_ms));
+    (start.min(end.saturating_sub(SECTION_MIN_MS)), end)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Target {
     Local,
@@ -528,6 +558,9 @@ pub struct App {
     /// session file, followed in each logic pass while that window is open,
     /// and given to the next one before it is made.
     pub window_geometry: fastframe_shell::window::Geometry,
+    pub section_loop: Option<SectionLoop>,
+    /// Open the section editor on the next frame the bar is drawn.
+    pub section_editor_requested: bool,
     /// The mode to return the window to when the app closed in
     /// fullscreen lyrics.
     session_lyrics_fullscreen_from: Option<crate::settings::WindowMode>,
@@ -1030,6 +1063,8 @@ impl App {
                 position: session.window_pos,
                 maximized: session.window_maximized,
             },
+            section_loop: None,
+            section_editor_requested: false,
             session_lyrics_fullscreen_from: session.lyrics_fullscreen_from,
             dialog_rect: None,
             milkdrop_pos: session.milkdrop_pos,
@@ -8502,6 +8537,96 @@ impl App {
         }
     }
 
+    /// The section kept for the song `uri`, on or off.
+    pub fn section_for(&self, uri: &str) -> Option<&SectionLoop> {
+        self.section_loop
+            .as_ref()
+            .filter(|section| section.uri == uri)
+    }
+
+    fn toggle_section_loop(&mut self) {
+        let Some(now) = self.now_playing_live().filter(|now| now.duration_ms > 0) else {
+            return;
+        };
+        match &mut self.section_loop {
+            Some(section) if section.uri == now.uri => section.on = !section.on,
+            _ => {
+                // Start on the whole second the song is at, or as far back
+                // as a full-length section needs near the song's end.
+                let at = now.position_ms / 1000 * 1000;
+                let end = at.saturating_add(SECTION_DEFAULT_MS).min(now.duration_ms);
+                let (start_ms, end_ms) =
+                    section_bounds(at.min(end.saturating_sub(SECTION_DEFAULT_MS)), end, now.duration_ms);
+                self.section_loop = Some(SectionLoop {
+                    uri: now.uri.clone(),
+                    start_ms,
+                    end_ms,
+                    on: true,
+                });
+            }
+        }
+        self.enter_section(&now);
+    }
+
+    fn set_section_loop(&mut self, start_ms: u32, end_ms: u32) {
+        let Some(now) = self.now_playing_live().filter(|now| now.duration_ms > 0) else {
+            return;
+        };
+        let (start_ms, end_ms) = section_bounds(start_ms, end_ms, now.duration_ms);
+        self.section_loop = Some(SectionLoop {
+            uri: now.uri.clone(),
+            start_ms,
+            end_ms,
+            on: true,
+        });
+        self.enter_section(&now);
+    }
+
+    /// Moves playback to the section's start when the section is on and the
+    /// song is outside it.
+    fn enter_section(&mut self, now: &NowPlaying) {
+        let Some(section) = self.section_for(&now.uri).filter(|section| section.on) else {
+            return;
+        };
+        if !(section.start_ms..section.end_ms).contains(&now.position_ms) {
+            let start = section.start_ms;
+            self.seek(start);
+        }
+    }
+
+    /// Jumps back to the section's start once playback reaches its end, and
+    /// forgets the section once another song plays.
+    fn keep_section_loop(&mut self) {
+        let Some(section) = &self.section_loop else {
+            return;
+        };
+        let Some(now) = self.now_playing_live() else {
+            return;
+        };
+        if now.uri != section.uri {
+            self.section_loop = None;
+            return;
+        }
+        if self.section_remaining_ms(&now) == Some(0) {
+            let start = section.start_ms;
+            self.seek(start);
+        }
+    }
+
+    /// How long until playback reaches the end of the section that is on,
+    /// while the song plays.
+    fn section_remaining_ms(&self, now: &NowPlaying) -> Option<u32> {
+        let section = self.section_for(&now.uri).filter(|section| section.on)?;
+        if !now.playing || now.loading || self.any_play_pending() {
+            return None;
+        }
+        let end = section
+            .end_ms
+            .min(now.duration_ms.saturating_sub(SECTION_END_MARGIN_MS))
+            .max(section.start_ms + 1);
+        Some(end.saturating_sub(now.position_ms))
+    }
+
     /// The volume this side set that the engine has yet to confirm, if the
     /// hold is still good. Clears itself once the engine agrees or it expires.
     fn held_local_volume(&mut self, reported: u16) -> Option<u16> {
@@ -9718,6 +9843,8 @@ impl App {
                 self.set_repeat(mode.next());
             }
             Action::SetRepeat(mode) => self.set_repeat(mode),
+            Action::ToggleSectionLoop => self.toggle_section_loop(),
+            Action::SetSectionLoop { start_ms, end_ms } => self.set_section_loop(start_ms, end_ms),
             Action::AddToQueue { uri, label } => self.add_to_queue(uri, label),
             Action::QueueMany { songs } => self.queue_many(songs),
             Action::MoveInQueue { from, to } => {
@@ -10998,6 +11125,7 @@ impl App {
         #[cfg(feature = "milkdrop")]
         self.sync_milkdrop(ctx);
         self.apply_actions(ctx);
+        self.keep_section_loop();
         self.sync_media_controls(ctx);
         self.sync_window_title(ctx);
         self.remember_geometry(ctx);
@@ -11134,20 +11262,27 @@ impl App {
         }
     }
 
-    /// The soonest that playback, a pending play or polling needs the logic
-    /// to run again, if any of them does.
+    /// The soonest that playback, a repeating section's end, a pending play
+    /// or polling needs the logic to run again, if any of them does.
     fn next_pass(&self) -> Option<Duration> {
         let playing = self
             .now_playing()
             .is_some_and(|now| now.playing)
             .then_some(Duration::from_millis(250));
+        let section = self
+            .now_playing_live()
+            .and_then(|now| self.section_remaining_ms(&now))
+            .map(|remaining| Duration::from_millis(remaining.into()));
         let pending = self
             .any_play_pending()
             .then_some(Duration::from_millis(120));
         let polling = self
             .is_connected()
             .then(|| self.connected_repaint_interval());
-        [playing, pending, polling].into_iter().flatten().min()
+        [playing, section, pending, polling]
+            .into_iter()
+            .flatten()
+            .min()
     }
 
     /// How long the headless loop may sleep after this tick: until the next
@@ -20565,6 +20700,109 @@ mod tests {
         app.handle_local(confirmed_state);
         assert_eq!(app.pending_local_position, None);
         assert_eq!(app.now_playing().map(|n| n.position_ms), Some(95_200));
+    }
+
+    fn playing_locally(uri: &str, position_ms: u32) -> App {
+        let mut app = headless_app();
+        app.local.track = Some(crate::player::LocalTrack {
+            uri: uri.into(),
+            title: "Test Track".into(),
+            duration_ms: 185_000,
+            ..Default::default()
+        });
+        app.local.position_ms = position_ms;
+        app.local.playback = Playback::Playing;
+        app
+    }
+
+    #[test]
+    fn section_bounds_keep_the_section_ordered_inside_the_song() {
+        assert_eq!(section_bounds(50_000, 120_000, 185_000), (50_000, 120_000));
+        assert_eq!(section_bounds(120_000, 50_000, 185_000), (50_000, 120_000));
+        assert_eq!(section_bounds(60_000, 60_000, 185_000), (59_000, 60_000));
+        assert_eq!(section_bounds(170_000, 400_000, 185_000), (170_000, 185_000));
+        assert_eq!(section_bounds(0, 0, 185_000), (0, SECTION_MIN_MS));
+    }
+
+    #[test]
+    fn turning_a_section_on_starts_it_where_the_song_is_and_off_keeps_it() {
+        let mut app = playing_locally("spotify:track:sun", 72_400);
+        app.toggle_section_loop();
+        let section = app.section_for("spotify:track:sun").cloned().expect("a section");
+        assert_eq!((section.start_ms, section.end_ms, section.on), (72_000, 102_000, true));
+        assert_eq!(app.pending_local_position, None, "already inside, no jump");
+
+        app.toggle_section_loop();
+        let section = app.section_for("spotify:track:sun").expect("kept while off");
+        assert!(!section.on);
+    }
+
+    #[test]
+    fn a_section_near_the_song_end_still_gets_its_full_length() {
+        let mut app = playing_locally("spotify:track:sun", 180_000);
+        app.toggle_section_loop();
+        let section = app.section_for("spotify:track:sun").expect("a section");
+        assert_eq!((section.start_ms, section.end_ms), (155_000, 185_000));
+    }
+
+    #[test]
+    fn reaching_the_section_end_jumps_back_to_its_start() {
+        let mut app = playing_locally("spotify:track:sun", 72_000);
+        app.set_section_loop(50_000, 120_000);
+        app.keep_section_loop();
+        assert_eq!(app.pending_local_position, None);
+
+        app.local.position_ms = 120_000;
+        app.keep_section_loop();
+        assert_eq!(app.pending_local_position.map(|(at, _)| at), Some(50_000));
+        let now = app.now_playing_live().expect("now playing");
+        assert!(app.section_remaining_ms(&now).is_some_and(|left| left > 0));
+    }
+
+    #[test]
+    fn a_section_reaching_the_song_end_jumps_back_before_the_song_ends() {
+        let mut app = playing_locally("spotify:track:sun", 160_000);
+        app.set_section_loop(150_000, 185_000);
+        app.local.position_ms = 185_000 - SECTION_END_MARGIN_MS;
+        app.keep_section_loop();
+        assert_eq!(app.pending_local_position.map(|(at, _)| at), Some(150_000));
+    }
+
+    #[test]
+    fn setting_a_section_away_from_the_playing_point_moves_playback_into_it() {
+        let mut app = playing_locally("spotify:track:sun", 10_000);
+        app.set_section_loop(50_000, 120_000);
+        assert_eq!(app.pending_local_position.map(|(at, _)| at), Some(50_000));
+    }
+
+    #[test]
+    fn a_paused_or_switched_off_section_does_not_jump() {
+        let mut app = playing_locally("spotify:track:sun", 72_000);
+        app.set_section_loop(50_000, 120_000);
+        app.toggle_section_loop();
+        app.local.position_ms = 130_000;
+        app.keep_section_loop();
+        assert_eq!(app.pending_local_position, None);
+
+        app.toggle_section_loop();
+        app.pending_local_position = None;
+        app.local.playback = Playback::Paused;
+        app.local.position_ms = 130_000;
+        app.keep_section_loop();
+        assert_eq!(app.pending_local_position, None);
+    }
+
+    #[test]
+    fn another_song_forgets_the_section() {
+        let mut app = playing_locally("spotify:track:sun", 72_000);
+        app.set_section_loop(50_000, 120_000);
+        if let Some(track) = &mut app.local.track {
+            track.uri = "spotify:track:moon".into();
+        }
+        app.local.position_ms = 130_000;
+        app.keep_section_loop();
+        assert_eq!(app.section_loop, None);
+        assert_eq!(app.pending_local_position, None);
     }
 
     fn seed_playlist(app: &mut App, id: &str) {

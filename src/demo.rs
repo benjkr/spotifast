@@ -978,6 +978,18 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
             }
             "cast-idle" => cast_devices(app, false),
             "cast-connecting" => cast_devices(app, true),
+            "section" | "section-editor" => {
+                if let Some(now) = app.now_playing() {
+                    let start_ms = now.position_ms.saturating_sub(20_000) / 1000 * 1000;
+                    app.section_loop = Some(crate::app::SectionLoop {
+                        uri: now.uri,
+                        start_ms,
+                        end_ms: (start_ms + 60_000).min(now.duration_ms),
+                        on: true,
+                    });
+                    app.section_editor_requested = surface == "section-editor";
+                }
+            }
             // These paired states capture both outcomes of the collection
             // Shuffle click for the PR visual comparison.
             "shuffle-selected" => {

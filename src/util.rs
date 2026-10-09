@@ -17,6 +17,24 @@ pub fn format_duration_ms(ms: u32) -> String {
     }
 }
 
+/// Reads `1:05`, `1:02:05` or `65` as milliseconds: typed times, the
+/// whole-second inverse of [`format_duration_ms`].
+pub fn parse_duration_ms(text: &str) -> Option<u32> {
+    let parts: Vec<&str> = text.trim().split(':').collect();
+    if parts.len() > 3 {
+        return None;
+    }
+    let mut seconds: u32 = 0;
+    for (index, part) in parts.iter().enumerate() {
+        let value: u32 = part.trim().parse().ok()?;
+        if index > 0 && value >= 60 {
+            return None;
+        }
+        seconds = seconds.checked_mul(60)?.checked_add(value)?;
+    }
+    seconds.checked_mul(1000)
+}
+
 /// `2 hr 13 min` for playlist totals, `45 min 12 sec` under an hour.
 pub fn format_total_ms(locale: Locale, ms: u64) -> String {
     let total = ms / 1000;
@@ -356,6 +374,21 @@ pub(crate) fn temporary_files(dir: &std::path::Path) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_times_read_back_as_milliseconds() {
+        assert_eq!(parse_duration_ms("0:50"), Some(50_000));
+        assert_eq!(parse_duration_ms(" 2:00 "), Some(120_000));
+        assert_eq!(parse_duration_ms("1:02:05"), Some(3_725_000));
+        assert_eq!(parse_duration_ms("65"), Some(65_000));
+        for text in ["", "1:", ":30", "1:60", "a:10", "1:2:3:4", "-5"] {
+            assert_eq!(parse_duration_ms(text), None, "{text:?}");
+        }
+        assert_eq!(
+            parse_duration_ms(&format_duration_ms(185_000)),
+            Some(185_000)
+        );
+    }
 
     fn pixel(rgba: &[u8], size: usize, x: usize, y: usize) -> [u8; 4] {
         let index = (y * size + x) * 4;

@@ -49,7 +49,7 @@ struct Cli {
     /// `windows-taskbar`, `german`, `lyrics`, `lyrics-fullscreen`, `collection-loading`,
     /// `shuffle-selected`, `shuffle-started`, `undated-mix`, `signed-out`, `connecting`, `library-list`,
     /// `library-list-narrow`, `library-list-wide`, `library-grid`, `library-grid-narrow`,
-    /// or `library-grid-wide`.
+    /// `library-grid-wide`, `section`, or `section-editor`.
     #[cfg(feature = "demo")]
     #[arg(long)]
     demo_show: Option<String>,
