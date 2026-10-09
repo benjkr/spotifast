@@ -382,6 +382,26 @@ size in logical pixels for a shot (for example `760x800` or `1240x800`).
 first point, in logical pixels, and is still held down at the second when the
 shot is taken.
 
+`--demo-record <DIRECTORY>` records the window instead, for anything that
+moves: hover, animation, a menu opening. It writes `frame-00000.png` onwards,
+60 to a second, then exits. The recording keeps a clock of its own, one 60th
+of a second per frame however long saving takes, so animations and hover
+delays play at their real speed. It waits `--demo-shot-delay` for cover art
+first, and does not need the window to be visible on screen.
+`--demo-pointer "SECONDS:X,Y;..."` scripts the pointer as stops in logical
+pixels, eased from one to the next; a `!` after a stop clicks there and `!r`
+right-clicks. The
+recording ends half a second after the last stop, or after three seconds
+without a pointer. Join the frames into a video with ffmpeg:
+
+```
+cargo run --release --features demo -- --demo-page playlist:pl1 \
+  --demo-show rail --demo-size 1200x800 --demo-record .cache/rail \
+  --demo-pointer "0:700,400; 1:700,400; 1.7:40,380; 3:40,380; 3.7:640,420; 5:640,420"
+ffmpeg -framerate 60 -i .cache/rail/frame-%05d.png \
+  -c:v libx264 -crf 18 -pix_fmt yuv420p .cache/rail.mp4
+```
+
 `--demo-show rail` collapses the sidebar to its strip of covers, and `rail-open`
 holds its card open for a still shot.
 

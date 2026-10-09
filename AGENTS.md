@@ -200,7 +200,11 @@ mise or mbx.
 ## Definition of done
 
 - Add focused regression tests for changed behaviour. Use the `demo` feature
-  for deterministic UI coverage and screenshots.
+  for deterministic UI coverage and screenshots. For anything that moves
+  (hover, animation, menus opening), record a video with `--demo-record`
+  and a scripted `--demo-pointer`; it renders off screen at real speed, so
+  it works where screen recording cannot. See the demo section of
+  `docs/_reference/settings-and-files.md`.
 - Update the README and docs when user-visible behaviour, settings, files, or
   network access changes.
 - Run the full checks from `CONTRIBUTING.md`. Do not weaken a lint, delete a

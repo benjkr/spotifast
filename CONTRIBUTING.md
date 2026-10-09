@@ -141,7 +141,9 @@ platforms actually produced the captures.
 Lay the captures out in the description as a table with Before and After side
 by side, for light and dark themes at a narrow and a normal window size. Show
 relevant open menus, loading, error and empty states, and attach a short
-recording when the change moves. Explain the visible change briefly and list
+recording when the change moves, made with the demo
+build's `--demo-record` and `--demo-pointer` flags described in
+[Settings and files](docs/_reference/settings-and-files.md). Explain the visible change briefly and list
 any remaining checks.
 
 An interactive HTML comparison, with theme and size selectors and Before and
