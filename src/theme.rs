@@ -449,6 +449,7 @@ fastframe_icons::icons! {
         Repeat => "repeat",
         Repeat1 => "repeat-1",
         Search => lucide "search",
+        SectionRepeat => "section-repeat",
         Settings => lucide "settings",
         Shrink => "shrink",
         Shuffle => "shuffle",

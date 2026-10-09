@@ -788,6 +788,7 @@ fn transport(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, region:
         }
         SliderEvent::None => {}
     }
+    section_marks(app, ui, now, slider_rect);
     ui.painter().text(
         pos2(slider_left + slider_width + 8.0, row_cy),
         egui::Align2::LEFT_CENTER,
@@ -933,6 +934,255 @@ fn extras(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>) {
     {
         app.actions.push(Action::ToggleLyricsPanel);
     }
+    section_toggle(app, ui, now);
+}
+
+const SECTION_EDITOR_ID: &str = "section-editor";
+/// The end of the section being dragged on the seek bar (true for its
+/// start) and where it is, until the drag lets go.
+const SECTION_DRAG_ID: &str = "section-drag";
+
+/// The section that repeats, tinted on the seek bar between two brackets
+/// that drag its ends.
+fn section_marks(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, track: Rect) {
+    let Some(now) = now.filter(|now| now.duration_ms > 0) else {
+        return;
+    };
+    let Some(section) = app
+        .section_for(&now.uri)
+        .filter(|section| section.on)
+        .cloned()
+    else {
+        return;
+    };
+    let palette = app.palette;
+    let duration = now.duration_ms;
+    let drag_id = egui::Id::new(SECTION_DRAG_ID);
+    let (mut start, mut end) = (section.start_ms, section.end_ms);
+    match ui.data(|data| data.get_temp::<(bool, u32)>(drag_id)) {
+        Some((true, at)) => start = at,
+        Some((false, at)) => end = at,
+        None => {}
+    }
+    let x_of = |ms: u32| track.left() + track.width() * (ms as f32 / duration as f32);
+    let ms_at = |x: f32| {
+        (((x - track.left()) / track.width()).clamp(0.0, 1.0) * duration as f32) as u32
+    };
+    let cy = track.center().y;
+    ui.painter().rect_filled(
+        Rect::from_min_max(pos2(x_of(start), cy - 4.0), pos2(x_of(end), cy + 4.0)),
+        3.0,
+        palette.accent.gamma_multiply(0.3),
+    );
+    for (is_start, at) in [(true, start), (false, end)] {
+        let x = x_of(at);
+        let response = ui
+            .interact(
+                Rect::from_center_size(pos2(x, cy), vec2(12.0, 18.0)),
+                drag_id.with(is_start),
+                Sense::click_and_drag(),
+            )
+            .on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+        if response.dragged()
+            && let Some(pointer) = response.interact_pointer_pos()
+        {
+            let at = if is_start {
+                ms_at(pointer.x).min(end.saturating_sub(crate::app::SECTION_MIN_MS))
+            } else {
+                ms_at(pointer.x).max(start + crate::app::SECTION_MIN_MS).min(duration)
+            };
+            ui.data_mut(|data| data.insert_temp(drag_id, (is_start, at)));
+        }
+        if response.drag_stopped() {
+            ui.data_mut(|data| data.remove::<(bool, u32)>(drag_id));
+            app.actions.push(Action::SetSectionLoop {
+                start_ms: start,
+                end_ms: end,
+            });
+        }
+        let lip = if is_start { 4.0 } else { -4.0 };
+        ui.painter().add(egui::Shape::line(
+            vec![
+                pos2(x + lip, cy - 7.0),
+                pos2(x, cy - 7.0),
+                pos2(x, cy + 7.0),
+                pos2(x + lip, cy + 7.0),
+            ],
+            egui::Stroke::new(2.0, palette.accent),
+        ));
+        if response.dragged() || response.hovered() {
+            let label = ui.painter().layout_no_wrap(
+                util::format_duration_ms(at),
+                theme::regular(11.0),
+                palette.text,
+            );
+            let pill = Rect::from_center_size(
+                pos2(x, cy - 17.0),
+                label.size() + vec2(10.0, 4.0),
+            );
+            ui.painter().rect_filled(pill, 4.0, palette.surface);
+            ui.painter().galley(pill.center() - label.size() / 2.0, label, palette.text);
+        }
+    }
+}
+
+/// The toggle that repeats a section of the playing song, and the small
+/// editor it opens for the section's ends.
+fn section_toggle(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>) {
+    let palette = app.palette;
+    let now = now.filter(|now| now.duration_ms > 0);
+    let section = now.and_then(|now| app.section_for(&now.uri)).cloned();
+    let on = section.as_ref().is_some_and(|section| section.on);
+    let label = gettext(app.locale, "Repeat a section");
+    let tooltip = match &section {
+        // Translators: The section-repeat button's tooltip while a stretch
+        // of the song repeats. {start} and {end} are times such as 0:50.
+        Some(section) if on => gettext(app.locale, "Repeating {start} to {end}. Right-click to change")
+            .replace("{start}", &util::format_duration_ms(section.start_ms))
+            .replace("{end}", &util::format_duration_ms(section.end_ms)),
+        _ => label.to_string(),
+    };
+    let response = ui
+        .add_enabled_ui(now.is_some(), |ui| {
+            theme::icon_button(
+                ui,
+                Icon::SectionRepeat,
+                18.0,
+                if on { palette.accent } else { palette.secondary },
+                if on { palette.accent_hover } else { palette.text },
+                &tooltip,
+            )
+        })
+        .inner;
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, now.is_some(), on, &label)
+    });
+    let editor = egui::Id::new(SECTION_EDITOR_ID);
+    if response.clicked() {
+        app.actions.push(Action::ToggleSectionLoop);
+        if on {
+            egui::Popup::close_id(ui.ctx(), editor);
+        } else {
+            egui::Popup::open_id(ui.ctx(), editor);
+        }
+    }
+    if (response.secondary_clicked() || std::mem::take(&mut app.section_editor_requested)) && on {
+        egui::Popup::open_id(ui.ctx(), editor);
+    }
+    let Some(now) = now else {
+        egui::Popup::close_id(ui.ctx(), editor);
+        return;
+    };
+    egui::Popup::from_response(&response)
+        .id(editor)
+        .open_memory(None)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .align(egui::RectAlign::TOP)
+        .frame(super::widgets::menu_frame(&palette).inner_margin(Margin::same(12)))
+        .show(|ui| section_editor(app, ui, now));
+}
+
+/// The section's two ends as typed times, each with a button that takes
+/// the playing position. The section turned on a frame earlier may not be
+/// applied yet, so the editor reads the song's position until it is.
+fn section_editor(app: &mut App, ui: &mut egui::Ui, now: &NowPlaying) {
+    let palette = app.palette;
+    let locale = app.locale;
+    ui.set_width(240.0);
+    let (start, end) = app
+        .section_for(&now.uri)
+        .map_or((now.position_ms, now.position_ms), |section| {
+            (section.start_ms, section.end_ms)
+        });
+    theme::text(ui, gettext(locale, "Repeat a section"), theme::medium(13.0), palette.text);
+    ui.add_space(6.0);
+    let at = now.position_ms / 1000 * 1000;
+    let use_now = gettext(locale, "Use {time}").replace("{time}", &util::format_duration_ms(at));
+    for (is_start, value) in [(true, start), (false, end)] {
+        ui.horizontal(|ui| {
+            let name = if is_start {
+                // Translators: Where a repeated section of a song begins.
+                gettext(locale, "From")
+            } else {
+                // Translators: Where a repeated section of a song ends.
+                gettext(locale, "To")
+            };
+            let (label_rect, _) = ui.allocate_exact_size(vec2(44.0, 24.0), Sense::hover());
+            ui.painter().text(
+                label_rect.left_center(),
+                egui::Align2::LEFT_CENTER,
+                &name,
+                theme::regular(13.0),
+                palette.secondary,
+            );
+            let id = egui::Id::new(SECTION_EDITOR_ID).with(is_start);
+            let focused = ui.memory(|memory| memory.has_focus(id));
+            let mut text = if focused {
+                ui.data(|data| data.get_temp::<String>(id))
+                    .unwrap_or_else(|| util::format_duration_ms(value))
+            } else {
+                util::format_duration_ms(value)
+            };
+            let field = Frame::new()
+                .fill(palette.surface)
+                .corner_radius(egui::CornerRadius::same(6))
+                .inner_margin(Margin::symmetric(8, 4))
+                .show(ui, |ui| {
+                    super::widgets::text_edit(
+                        ui,
+                        locale,
+                        egui::TextEdit::singleline(&mut text)
+                            .id(id)
+                            .font(theme::regular(13.0))
+                            .frame(egui::Frame::NONE)
+                            .desired_width(56.0),
+                    )
+                })
+                .inner;
+            field.widget_info(|| {
+                egui::WidgetInfo::text_edit(ui.is_enabled(), "", &text, &name)
+            });
+            if field.has_focus() {
+                ui.data_mut(|data| data.insert_temp(id, text.clone()));
+            }
+            if field.lost_focus() {
+                ui.data_mut(|data| data.remove::<String>(id));
+                if let Some(ms) = util::parse_duration_ms(&text) {
+                    app.actions.push(if is_start {
+                        Action::SetSectionLoop {
+                            start_ms: ms,
+                            end_ms: end.max(ms + crate::app::SECTION_MIN_MS),
+                        }
+                    } else {
+                        Action::SetSectionLoop {
+                            start_ms: start.min(ms.saturating_sub(crate::app::SECTION_MIN_MS)),
+                            end_ms: ms,
+                        }
+                    });
+                }
+            }
+            if theme::pill_button(ui, &palette, &use_now, false).clicked() {
+                app.actions.push(if is_start {
+                    Action::SetSectionLoop {
+                        start_ms: at,
+                        end_ms: end.max(at + crate::app::SECTION_MIN_MS),
+                    }
+                } else {
+                    Action::SetSectionLoop {
+                        start_ms: start.min(at.saturating_sub(crate::app::SECTION_MIN_MS)),
+                        end_ms: at,
+                    }
+                });
+            }
+        });
+    }
+    ui.add_space(6.0);
+    theme::text(
+        ui,
+        gettext(locale, "Drag the brackets on the seek bar to adjust."),
+        theme::regular(12.0),
+        palette.dim,
+    );
 }
 
 #[cfg(test)]
