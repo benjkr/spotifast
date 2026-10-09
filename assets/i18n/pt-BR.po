@@ -1506,6 +1506,22 @@ msgstr "Usa a cor da capa atual nas páginas e na barra do player."
 msgid "Show names without covers in the sidebar."
 msgstr "Mostra os nomes sem capas na barra lateral."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Barra lateral recolhida da biblioteca"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Mostra só as capas na barra lateral. Ela se abre sobre a página enquanto o ponteiro fica sobre ela."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Expandir barra lateral"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Recolher barra lateral"
+
 #: src/ui/settings.rs:923
 msgid "Show each track on one line without a cover."
 msgstr "Mostra cada faixa em uma linha, sem capa."

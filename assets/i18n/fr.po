@@ -1515,6 +1515,22 @@ msgstr ""
 msgid "Show names without covers in the sidebar."
 msgstr "Affiche les noms sans pochette dans la barre latérale."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Barre latérale repliée"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Affiche seulement les pochettes dans la barre latérale. Elle s’ouvre par-dessus la page tant que le pointeur reste dessus."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Déplier la barre latérale"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Replier la barre latérale"
+
 #: src/ui/settings.rs:923
 msgid "Show each track on one line without a cover."
 msgstr "Affiche chaque titre sur une ligne, sans pochette."

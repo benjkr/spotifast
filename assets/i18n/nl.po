@@ -1511,6 +1511,22 @@ msgstr "Gebruik de kleur van de huidige cover op pagina's en in de spelerbalk."
 msgid "Show names without covers in the sidebar."
 msgstr "Namen zonder covers tonen in de zijbalk."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Ingeklapte bibliotheekzijbalk"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Alleen covers tonen in de zijbalk. Hij opent boven de pagina zolang de aanwijzer erop rust."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Zijbalk uitklappen"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Zijbalk inklappen"
+
 #: src/ui/settings.rs:923
 msgid "Show each track on one line without a cover."
 msgstr "Elk nummer op één regel tonen, zonder cover."

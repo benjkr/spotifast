@@ -1499,6 +1499,22 @@ msgstr "Använd det aktuella omslagets färg på sidor och i spelarfältet."
 msgid "Show names without covers in the sidebar."
 msgstr "Visa namn utan omslag i sidofältet."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Hopfällt sidofält för biblioteket"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Visa bara omslag i sidofältet. Det öppnas över sidan medan pekaren vilar på det."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Fäll ut sidofältet"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Fäll ihop sidofältet"
+
 #: src/ui/settings.rs:923
 msgid "Show each track on one line without a cover."
 msgstr "Visa varje låt på en rad utan omslag."

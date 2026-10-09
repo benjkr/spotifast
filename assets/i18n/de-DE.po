@@ -1517,6 +1517,22 @@ msgstr ""
 msgid "Show names without covers in the sidebar."
 msgstr "Namen ohne Cover in der Seitenleiste anzeigen."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Eingeklappte Bibliotheksleiste"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Nur Cover in der Seitenleiste anzeigen. Sie öffnet sich über der Seite, solange der Zeiger darauf ruht."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Seitenleiste ausklappen"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Seitenleiste einklappen"
+
 #: src/ui/settings.rs:923
 msgid "Show each track on one line without a cover."
 msgstr "Jeden Titel ohne Cover in einer Zeile anzeigen."

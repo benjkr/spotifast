@@ -1102,6 +1102,11 @@ pub fn apply_flags(app: &mut App, page: Option<&str>, show: Option<&str>) {
                 }
             }
             "focus" => app.settings.sidebar_visible = false,
+            "rail" => app.settings.sidebar_rail = true,
+            "rail-open" => {
+                app.settings.sidebar_rail = true;
+                app.demo_rail_open = true;
+            }
             // A cold start: no device is playing anything, and all the app
             // has is the song the last session ended on.
             "resume" => {
@@ -7089,6 +7094,108 @@ mod tests {
                 .any(|action| matches!(action, Action::Open(Page::Playlist(id)) if id == "pl2"))
         );
         app.backend.shutdown();
+    }
+
+    /// The folded sidebar holds its width while its card opens over the
+    /// page: a row's name takes clicks only once the card is open, and the
+    /// page's edge never moves.
+    #[test]
+    fn the_folded_sidebar_opens_over_the_page_without_moving_it() {
+        fn view(app: &mut App, ui: &mut egui::Ui) {
+            crate::ui::sidebar::show(app, ui);
+            let left = ui.available_rect_before_wrap().left();
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(egui::Id::new("page-left"), left));
+        }
+        let page_left =
+            |ctx: &egui::Context| ctx.data(|data| data.get_temp::<f32>(egui::Id::new("page-left")));
+        let (ctx, mut app) = accessible_app("sidebar-rail");
+        app.settings.sidebar_rail = true;
+        view_frame(&ctx, &mut app, vec![], view);
+        let painted = view_frame(&ctx, &mut app, vec![], view);
+        let folded_left = page_left(&ctx).expect("the page's edge");
+        let name = sidebar_text(&painted, "Sunday morning");
+        assert!(
+            name.center().x > folded_left,
+            "the names lie past the folded rail"
+        );
+
+        // Folded, the name's place belongs to the page.
+        app.actions.clear();
+        view_frame(
+            &ctx,
+            &mut app,
+            pointer_click(name.center(), egui::PointerButton::Primary),
+            view,
+        );
+        assert!(
+            !app.actions
+                .iter()
+                .any(|action| matches!(action, Action::Open(Page::Playlist(_)))),
+            "the folded rail must not take clicks beside it"
+        );
+
+        // Resting on the cover opens the card, and the page stays put.
+        let cover = egui::pos2(folded_left / 2.0, name.center().y + 9.0);
+        let mut painted = Vec::new();
+        for _ in 0..40 {
+            painted = view_frame(&ctx, &mut app, vec![egui::Event::PointerMoved(cover)], view);
+            assert_eq!(page_left(&ctx), Some(folded_left), "the page must not move");
+        }
+        let name = sidebar_text(&painted, "Sunday morning");
+        app.actions.clear();
+        view_frame(
+            &ctx,
+            &mut app,
+            pointer_click(name.center(), egui::PointerButton::Primary),
+            view,
+        );
+        assert!(
+            app.actions
+                .iter()
+                .any(|action| matches!(action, Action::Open(Page::Playlist(id)) if id == "pl2")),
+            "the open card's rows take clicks over the page"
+        );
+        assert_eq!(page_left(&ctx), Some(folded_left));
+        app.backend.shutdown();
+    }
+
+    /// Right-clicking the sidebar's empty space offers to collapse it, and
+    /// the collapsed card's empty space offers to expand it again.
+    #[test]
+    fn the_sidebar_background_menu_collapses_and_expands_it() {
+        let view = crate::ui::sidebar::show;
+        let empty = egui::pos2(100.0, 2100.0);
+        for (rail, label) in [(false, "Collapse sidebar"), (true, "Expand sidebar")] {
+            let (ctx, mut app) = accessible_app(&format!("sidebar-background-{rail}"));
+            app.settings.sidebar_rail = rail;
+            app.demo_rail_open = rail;
+            for _ in 0..30 {
+                view_frame(&ctx, &mut app, vec![], view);
+            }
+            view_frame(
+                &ctx,
+                &mut app,
+                pointer_click(empty, egui::PointerButton::Secondary),
+                view,
+            );
+            let painted = view_frame(&ctx, &mut app, vec![], view);
+            let item = sidebar_text(&painted, label);
+            app.actions.clear();
+            view_frame(
+                &ctx,
+                &mut app,
+                pointer_click(item.center(), egui::PointerButton::Primary),
+                view,
+            );
+            assert!(
+                app.actions
+                    .iter()
+                    .any(|action| matches!(action, Action::SetSidebarRail(to) if *to == !rail)),
+                "{label} must switch the setting"
+            );
+            app.backend.shutdown();
+        }
     }
 
     #[test]

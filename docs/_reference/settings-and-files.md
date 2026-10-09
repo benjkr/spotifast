@@ -278,6 +278,7 @@ main fields are:
 | `liked_songs_pinned` | `true` | Keep Liked Songs in the pin block; older settings place it first until moved |
 | `sidebar_compact` | `false` | Names only in the library sidebar, no covers |
 | `sidebar_grid` | `false` | Library entries as responsive cover cards instead of rows |
+| `sidebar_rail` | `false` | Collapse the sidebar to a strip of covers that opens as a card over the page, at `sidebar_width`, while the pointer rests on it. **Collapse sidebar** and **Expand sidebar** in the menu from right-clicking the sidebar's empty space switch it too. The strip always shows covers, so `sidebar_compact`, `sidebar_grid` and `art_expanded` apply only to the full sidebar |
 | `tracklist_compact` | `false` | One-line track rows without covers |
 | `middle_click_autoscroll` | `false` | Linux only: middle-click a list to autoscroll it. Windows always autoscrolls and macOS never does |
 | `winamp_window` | `false` | The window is the Winamp mini player |
@@ -380,6 +381,10 @@ size in logical pixels for a shot (for example `760x800` or `1240x800`).
 `--demo-drag X,Y:X,Y` shows a drag in progress: the pointer presses at the
 first point, in logical pixels, and is still held down at the second when the
 shot is taken.
+
+`--demo-show rail` collapses the sidebar to its strip of covers, and `rail-open`
+holds its card open for a still shot.
+
 Since 0.8.0, demo windows ignore saved window geometry and do not
 read or save the normal window's framework state. Existing built-in appearance
 settings still apply. `--demo-data <DIRECTORY>` keeps demo caches and logs under

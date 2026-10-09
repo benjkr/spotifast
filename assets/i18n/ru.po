@@ -1513,6 +1513,22 @@ msgstr "Цвет текущей обложки на страницах и в п�
 msgid "Show names without covers in the sidebar."
 msgstr "Названия без обложек в боковой панели."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Свёрнутая боковая панель медиатеки"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Только обложки в боковой панели. Она раскрывается поверх страницы, пока на ней находится указатель."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Развернуть боковую панель"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Свернуть боковую панель"
+
 #: src/ui/settings.rs:923
 msgid "Show each track on one line without a cover."
 msgstr "Каждый трек в одну строку без обложки."

@@ -1516,6 +1516,22 @@ msgstr "Używaj koloru bieżącej okładki na stronach i pasku odtwarzacza."
 msgid "Show names without covers in the sidebar."
 msgstr "Pokazuj nazwy bez okładek na pasku bocznym."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Zwinięty pasek biblioteki"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Pokazuj tylko okładki na pasku bocznym. Otwiera się nad stroną, gdy wskaźnik na nim spoczywa."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Rozwiń pasek boczny"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Zwiń pasek boczny"
+
 #: src/ui/settings.rs:923
 msgid "Show each track on one line without a cover."
 msgstr "Pokazuj każdy utwór w jednym wierszu, bez okładki."

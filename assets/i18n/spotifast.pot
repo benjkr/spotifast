@@ -1472,6 +1472,22 @@ msgstr ""
 msgid "Show names without covers in the sidebar."
 msgstr ""
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr ""
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr ""
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr ""
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr ""
+
 #: src/ui/settings.rs:923
 msgid "Show each track on one line without a cover."
 msgstr ""

@@ -1231,6 +1231,8 @@ pub enum Action {
         sort: crate::settings::LibrarySort,
     },
     SetLibraryGrid(bool),
+    /// Collapse the sidebar to its strip of covers, or expand it again.
+    SetSidebarRail(bool),
     ToggleLibraryFolder(String),
     ArrangeLibrary {
         pinned: Vec<String>,
