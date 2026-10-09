@@ -8561,8 +8561,11 @@ impl App {
                 // as a full-length section needs near the song's end.
                 let at = now.position_ms / 1000 * 1000;
                 let end = at.saturating_add(SECTION_DEFAULT_MS).min(now.duration_ms);
-                let (start_ms, end_ms) =
-                    section_bounds(at.min(end.saturating_sub(SECTION_DEFAULT_MS)), end, now.duration_ms);
+                let (start_ms, end_ms) = section_bounds(
+                    at.min(end.saturating_sub(SECTION_DEFAULT_MS)),
+                    end,
+                    now.duration_ms,
+                );
                 self.section_loop = Some(SectionLoop {
                     uri: now.uri.clone(),
                     start_ms,
@@ -20730,7 +20733,10 @@ mod tests {
         assert_eq!(section_bounds(50_000, 120_000, 185_000), (50_000, 120_000));
         assert_eq!(section_bounds(120_000, 50_000, 185_000), (50_000, 120_000));
         assert_eq!(section_bounds(60_000, 60_000, 185_000), (59_000, 60_000));
-        assert_eq!(section_bounds(170_000, 400_000, 185_000), (170_000, 185_000));
+        assert_eq!(
+            section_bounds(170_000, 400_000, 185_000),
+            (170_000, 185_000)
+        );
         assert_eq!(section_bounds(0, 0, 185_000), (0, SECTION_MIN_MS));
     }
 
@@ -20738,12 +20744,20 @@ mod tests {
     fn turning_a_section_on_starts_it_where_the_song_is_and_off_keeps_it() {
         let mut app = playing_locally("spotify:track:sun", 72_400);
         app.toggle_section_loop();
-        let section = app.section_for("spotify:track:sun").cloned().expect("a section");
-        assert_eq!((section.start_ms, section.end_ms, section.on), (72_000, 102_000, true));
+        let section = app
+            .section_for("spotify:track:sun")
+            .cloned()
+            .expect("a section");
+        assert_eq!(
+            (section.start_ms, section.end_ms, section.on),
+            (72_000, 102_000, true)
+        );
         assert_eq!(app.pending_local_position, None, "already inside, no jump");
 
         app.toggle_section_loop();
-        let section = app.section_for("spotify:track:sun").expect("kept while off");
+        let section = app
+            .section_for("spotify:track:sun")
+            .expect("kept while off");
         assert!(!section.on);
     }
 
