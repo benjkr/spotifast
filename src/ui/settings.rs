@@ -801,6 +801,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let themes_folder = gettext(locale, "Open themes folder");
     let accent_from_art = gettext(locale, "Colour from album art");
     let sidebar_compact = gettext(locale, "Compact library sidebar");
+    let sidebar_rail = gettext(locale, "Collapsed library sidebar");
     let tracklist_compact = gettext(locale, "Compact track list");
     let middle_click = gettext(locale, "Middle-click autoscroll");
     let custom_titlebar = gettext(locale, "Custom title bar");
@@ -881,6 +882,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 "Show the song moving behind the player bar's controls while it plays here.",
+            ),
+        ),
+        RowText::new(
+            sidebar_rail.clone(),
+            gettext(
+                locale,
+                "Show only covers in the sidebar. It opens over the page while the pointer rests on it.",
             ),
         ),
     ];
@@ -1081,6 +1089,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         &mut app.settings.sidebar_compact,
                     )
                     .changed()
+                    {
+                        changed = true;
+                    }
+                },
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[9],
+                |ui| {
+                    if widgets::switch(ui, &palette, &sidebar_rail, &mut app.settings.sidebar_rail)
+                        .changed()
                     {
                         changed = true;
                     }

@@ -278,7 +278,7 @@ fn finish_entry_interaction(
             app.actions.push(Action::Open(entry.page.clone()));
         }
     }
-    if !app.settings.sidebar_grid
+    if !shows_grid(app)
         && response.double_clicked()
         && entry.folder.is_none()
         && !cover_took_click
@@ -344,9 +344,8 @@ pub(crate) fn selected_sort(app: &App, shelf: Filter) -> LibrarySort {
     }
 }
 
-fn sort_menu(app: &mut App, ui: &mut egui::Ui, shelf: Filter, selected: LibrarySort) {
-    let locale = app.locale;
-    let labels = [
+fn sort_labels(locale: Locale) -> [(LibrarySort, std::borrow::Cow<'static, str>); 6] {
+    [
         (LibrarySort::Library, gettext(locale, "Library order")),
         (
             LibrarySort::RecentlyPlayed,
@@ -362,7 +361,110 @@ fn sort_menu(app: &mut App, ui: &mut egui::Ui, shelf: Filter, selected: LibraryS
             LibrarySort::Spotify,
             gettext(locale, "Spotify custom order"),
         ),
-    ];
+    ]
+}
+
+/// A menu wide enough for its longest label.
+fn fit_menu_width(ui: &mut egui::Ui, palette: &Palette, labels: &[&str]) {
+    let width = labels
+        .iter()
+        .map(|label| {
+            ui.painter()
+                .layout_no_wrap(label.to_string(), theme::regular(13.5), palette.text)
+                .size()
+                .x
+        })
+        .fold(140.0_f32, f32::max)
+        + 52.0;
+    ui.set_width(width.min(ui.ctx().content_rect().width() - 24.0));
+}
+
+/// The orders a shelf offers, as menu items.
+fn sort_items(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    labels: &[(LibrarySort, std::borrow::Cow<'static, str>)],
+    shelf: Filter,
+    selected: LibrarySort,
+) {
+    for (sort, label) in labels {
+        if !sort.supports(shelf)
+            || (*sort == LibrarySort::Library && shelf == Filter::Playlists)
+            || (*sort == LibrarySort::Local && app.settings.sidebar_order.is_empty())
+        {
+            continue;
+        }
+        if super::widgets::menu_item(
+            ui,
+            &app.palette,
+            (*sort == selected).then_some(Icon::Check),
+            label,
+        ) {
+            app.actions
+                .push(Action::SetLibrarySort { shelf, sort: *sort });
+        }
+    }
+}
+
+fn shelf_labels(locale: Locale) -> [(Filter, std::borrow::Cow<'static, str>); 4] {
+    [
+        (Filter::Playlists, gettext(locale, "Playlists")),
+        (Filter::Albums, gettext(locale, "Albums")),
+        (Filter::Artists, gettext(locale, "Artists")),
+        (Filter::Podcasts, gettext(locale, "Podcasts")),
+    ]
+}
+
+/// The rail's card has no room for the shelf chips and the order above its
+/// rows, which must not move as it opens, so both sit in one menu named
+/// for the shelf in the Library heading's place.
+fn shelf_menu(app: &mut App, ui: &mut egui::Ui, shelf: &mut Filter) {
+    let palette = app.palette;
+    let shelves = shelf_labels(app.locale);
+    let sorts = sort_labels(app.locale);
+    let name = &shelves
+        .iter()
+        .find(|(value, _)| *value == *shelf)
+        .expect("shelf label")
+        .1;
+    let response = ui.add(
+        egui::Button::image_and_text(
+            Icon::ChevronDown.image(palette.text, 15.0),
+            egui::RichText::new(name.as_ref())
+                .font(theme::bold(15.0))
+                .color(palette.text),
+        )
+        .truncate()
+        .frame(false)
+        .min_size(vec2(0.0, 28.0)),
+    );
+    egui::Popup::menu(&response)
+        .frame(super::widgets::menu_frame(&palette))
+        .show(|ui| {
+            let labels: Vec<&str> = shelves
+                .iter()
+                .map(|(_, label)| label.as_ref())
+                .chain(sorts.iter().map(|(_, label)| label.as_ref()))
+                .collect();
+            fit_menu_width(ui, &palette, &labels);
+            for (value, label) in &shelves {
+                if super::widgets::menu_item(
+                    ui,
+                    &palette,
+                    (*value == *shelf).then_some(Icon::Check),
+                    label,
+                ) {
+                    *shelf = *value;
+                }
+            }
+            ui.separator();
+            let selected = selected_sort(app, *shelf);
+            sort_items(app, ui, &sorts, *shelf, selected);
+        });
+}
+
+fn sort_menu(app: &mut App, ui: &mut egui::Ui, shelf: Filter, selected: LibrarySort) {
+    let labels = sort_labels(app.locale);
     let label = &labels
         .iter()
         .find(|(sort, _)| *sort == selected)
@@ -382,34 +484,9 @@ fn sort_menu(app: &mut App, ui: &mut egui::Ui, shelf: Filter, selected: LibraryS
     egui::Popup::menu(&response)
         .frame(super::widgets::menu_frame(&app.palette))
         .show(|ui| {
-            let width = labels
-                .iter()
-                .map(|(_, label)| {
-                    ui.painter()
-                        .layout_no_wrap(label.to_string(), theme::regular(13.5), app.palette.text)
-                        .size()
-                        .x
-                })
-                .fold(140.0_f32, f32::max)
-                + 52.0;
-            ui.set_width(width.min(ui.ctx().content_rect().width() - 24.0));
-            for (sort, label) in &labels {
-                if !sort.supports(shelf)
-                    || (*sort == LibrarySort::Library && shelf == Filter::Playlists)
-                    || (*sort == LibrarySort::Local && app.settings.sidebar_order.is_empty())
-                {
-                    continue;
-                }
-                if super::widgets::menu_item(
-                    ui,
-                    &app.palette,
-                    (*sort == selected).then_some(Icon::Check),
-                    label,
-                ) {
-                    app.actions
-                        .push(Action::SetLibrarySort { shelf, sort: *sort });
-                }
-            }
+            let names: Vec<&str> = labels.iter().map(|(_, label)| label.as_ref()).collect();
+            fit_menu_width(ui, &app.palette, &names);
+            sort_items(app, ui, &labels, shelf, selected);
         });
 }
 
@@ -497,7 +574,47 @@ fn order_entries(app: &App, shelf: Filter, sort: LibrarySort, entries: &mut [Ent
     }
 }
 
+/// The folded sidebar's width: a cover with its row's padding and the
+/// rail's margin on either side.
+const RAIL_WIDTH: f32 = 80.0;
+/// The space between the rail's edges and its rows.
+const RAIL_MARGIN: f32 = 10.0;
+/// The open card's gap to the window's edges. The rows stay where they are,
+/// so this comes out of the room between the card's edge and its rows.
+const RAIL_CARD_INSET: f32 = 5.0;
+const RAIL_CARD_RADIUS: f32 = 12.0;
+/// How long the pointer rests on the rail before the card opens, so passing
+/// over it on the way to the page's edge does not flash it open.
+const RAIL_OPEN_DELAY: f64 = 0.1;
+/// How long the card waits after the pointer leaves, so overshooting its
+/// edge by a little does not snap it shut.
+const RAIL_CLOSE_DELAY: f64 = 0.25;
+const RAIL_ANIMATION: f32 = 0.18;
+/// The page the open card always leaves visible beside it.
+const RAIL_PAGE_SLIVER: f32 = 48.0;
+
+/// The least width the sidebar takes from the window.
+pub(crate) fn least_width(settings: &crate::settings::Settings) -> f32 {
+    if !settings.sidebar_visible {
+        0.0
+    } else if settings.sidebar_rail {
+        RAIL_WIDTH
+    } else {
+        super::SIDEBAR_MIN_WIDTH
+    }
+}
+
+/// The Library is drawn as cards only in the full sidebar; the rail's
+/// covers are always rows.
+fn shows_grid(app: &App) -> bool {
+    app.settings.sidebar_grid && !app.settings.sidebar_rail
+}
+
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
+    if app.settings.sidebar_rail {
+        rail(app, ui);
+        return;
+    }
     let palette = app.palette;
     let expanded_art = has_expanded_art(app);
     let floating_art = app.settings.sidebar_grid && expanded_art;
@@ -529,12 +646,22 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             top,
             bottom: if expanded_art { 0 } else { 8 },
         }));
+    // Collapsing starts the strip folded, not with a card left open from
+    // the last time it was collapsed.
+    forget_rail_hover(ui.ctx());
     let response = panel.show(ui, |ui| {
+        // Under everything else, so only the sidebar's empty space has it.
+        let background = ui.interact(
+            ui.max_rect(),
+            egui::Id::new("sidebar-background"),
+            Sense::click(),
+        );
         let art_rect = expanded_art.then(|| expanded_art_rect(ui));
         if let Some(rect) = art_rect.filter(|_| !floating_art) {
             reserve_expanded_art(ui, rect);
         }
-        contents(app, ui, art_rect.filter(|_| floating_art));
+        contents(app, ui, art_rect.filter(|_| floating_art), None);
+        background_menu(app, &background);
         if let Some(rect) = art_rect {
             if floating_art {
                 paint_grid_art_mask(app, ui, rect);
@@ -549,6 +676,217 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         app.settings.sidebar_width = width;
         app.actions.push(Action::SettingsChanged);
     }
+}
+
+/// The folded sidebar: a strip of covers that holds its width in the
+/// layout, and a card over the page that opens from it while the pointer
+/// rests there. The card's contents are laid out once at the open width and
+/// only uncovered as it widens, so no cover moves under the pointer and the
+/// page beside it never reflows.
+fn rail(app: &mut App, ui: &mut egui::Ui) {
+    let palette = app.palette;
+    let ctx = ui.ctx().clone();
+    let rail = egui::Panel::left("sidebar-rail")
+        .resizable(false)
+        .exact_size(RAIL_WIDTH)
+        .show_separator_line(false)
+        .frame(Frame::new().fill(palette.panel))
+        .show(ui, |_| {})
+        .response
+        .rect;
+    let open_width = app
+        .settings
+        .sidebar_width
+        .min(ctx.content_rect().right() - rail.left() - RAIL_PAGE_SLIVER)
+        .max(RAIL_WIDTH);
+    let open_card = Rect::from_min_max(
+        rail.min + Vec2::splat(RAIL_CARD_INSET),
+        pos2(rail.left() + open_width, rail.bottom() - RAIL_CARD_INSET),
+    );
+    let open = rail_open(&ctx, rail, open_card);
+    // Demo captures have no pointer to rest on the rail.
+    #[cfg(any(test, feature = "demo"))]
+    let open = open || app.demo_rail_open;
+    let t = ctx.animate_bool_with_time_and_easing(
+        egui::Id::new(RAIL_OPENNESS_ID),
+        open,
+        RAIL_ANIMATION,
+        egui::emath::easing::cubic_out,
+    );
+    let lerp = |closed: f32, open: f32| closed + (open - closed) * t;
+    let inset = RAIL_CARD_INSET * t;
+    let card = Rect::from_min_max(
+        rail.min + Vec2::splat(inset),
+        pos2(lerp(rail.right(), open_card.right()), rail.bottom() - inset),
+    );
+    // The rows keep the gap left of them on their right as well, in the
+    // rail and in the open card alike.
+    let row_gap = RAIL_MARGIN - RAIL_CARD_INSET;
+    let content = Rect::from_min_max(
+        pos2(
+            rail.left() + RAIL_MARGIN,
+            rail.top() + 12.0 + theme::titlebar_inset(&ctx),
+        ),
+        pos2(
+            open_card.right() - row_gap,
+            rail.bottom() - 2.0 * RAIL_MARGIN,
+        ),
+    );
+    let clip = Rect::from_min_max(
+        card.min,
+        pos2(card.right() - lerp(RAIL_MARGIN, row_gap), card.bottom()),
+    );
+    egui::Area::new(egui::Id::new("sidebar-rail-card"))
+        .order(egui::Order::Middle)
+        .fixed_pos(card.min)
+        .constrain(false)
+        .movable(false)
+        .fade_in(false)
+        .show(&ctx, |ui| {
+            // The card is exactly as wide as it is drawn, so the page beside
+            // it keeps its pointer while the card is folded.
+            ui.set_min_size(card.size());
+            let radius = CornerRadius::same((RAIL_CARD_RADIUS * t).round() as u8);
+            if t > 0.0 {
+                ui.painter().add(
+                    egui::epaint::Shadow {
+                        offset: [0, 8],
+                        blur: 28,
+                        spread: 0,
+                        color: palette.shadow.gamma_multiply(t),
+                    }
+                    .as_shape(card, radius),
+                );
+            }
+            ui.painter().rect(
+                card,
+                radius,
+                palette.panel,
+                egui::Stroke::new(1.0, palette.outline.gamma_multiply(t)),
+                egui::StrokeKind::Inside,
+            );
+            let mut inner = ui.new_child(
+                egui::UiBuilder::new()
+                    .id_salt("sidebar-rail-contents")
+                    .max_rect(content)
+                    .layout(Layout::top_down(Align::Min)),
+            );
+            // Under everything else, so only the card's empty space has it.
+            let background = ui.interact(
+                card,
+                egui::Id::new("sidebar-rail-background"),
+                Sense::click(),
+            );
+            inner.set_clip_rect(clip.intersect(inner.clip_rect()));
+            contents(app, &mut inner, None, Some(t));
+            background_menu(app, &background);
+        });
+}
+
+const RAIL_HOVER_ID: &str = "sidebar-rail-hover";
+const RAIL_OPENNESS_ID: &str = "sidebar-rail-openness";
+
+/// The pointer's story with the rail, kept between frames.
+#[derive(Clone, Copy, Default)]
+struct RailHover {
+    open: bool,
+    /// When the pointer arrived on the folded rail.
+    arrived: Option<f64>,
+    /// When the pointer left the open card.
+    left: Option<f64>,
+    /// The sidebar was just collapsed under the pointer: the card waits for
+    /// it to leave the strip and come back, rather than spring open.
+    wait_for_leave: bool,
+}
+
+/// The full sidebar is showing: whenever it collapses next, the strip
+/// starts folded and waits for the pointer to come to it.
+fn forget_rail_hover(ctx: &egui::Context) {
+    ctx.data_mut(|data| {
+        data.insert_temp(
+            egui::Id::new(RAIL_HOVER_ID),
+            RailHover {
+                wait_for_leave: true,
+                ..RailHover::default()
+            },
+        );
+    });
+    ctx.animate_bool_with_time(egui::Id::new(RAIL_OPENNESS_ID), false, 0.0);
+}
+
+/// Right-clicking the sidebar's empty space collapses it to its strip of
+/// covers, or expands it again: the Settings switch, within reach.
+fn background_menu(app: &mut App, response: &egui::Response) {
+    let rail = app.settings.sidebar_rail;
+    egui::Popup::context_menu(response)
+        .frame(super::widgets::menu_frame(&app.palette))
+        .show(|ui| {
+            let label = if rail {
+                gettext(app.locale, "Expand sidebar")
+            } else {
+                gettext(app.locale, "Collapse sidebar")
+            };
+            // Sized to its label, like the Library's sort menu.
+            fit_menu_width(ui, &app.palette, &[label.as_ref()]);
+            if super::widgets::menu_item(ui, &app.palette, Some(Icon::PanelLeft), &label) {
+                app.actions.push(Action::SetSidebarRail(!rail));
+            }
+        });
+}
+
+/// Whether the rail's card is open this frame. It opens once the pointer
+/// has rested on the rail, at once for a song or playlist dragged onto it,
+/// and stays open while the pointer is over the card, one of its menus is
+/// open, its search has the keyboard, or one of its rows is being dragged.
+fn rail_open(ctx: &egui::Context, rail: Rect, open_card: Rect) -> bool {
+    let id = egui::Id::new(RAIL_HOVER_ID);
+    let mut hover = ctx.data(|data| data.get_temp::<RailHover>(id).unwrap_or_default());
+    let now = ctx.input(|input| input.time);
+    let pointer = ctx.input(|input| input.pointer.hover_pos());
+    let carrying = egui::DragAndDrop::has_payload_of_type::<DragTrack>(ctx)
+        || egui::DragAndDrop::has_payload_of_type::<DragEntry>(ctx);
+    if hover.wait_for_leave && !pointer.is_some_and(|pos| rail.contains(pos)) {
+        hover.wait_for_leave = false;
+    }
+    let over = !hover.wait_for_leave
+        && pointer.is_some_and(|pos| {
+            rail.contains(pos) || (hover.open && open_card.union(rail).contains(pos))
+        });
+    // A drag from the page that is not a song (a scroll bar, a slider, a
+    // selection) passes over the rail without opening it.
+    let busy = ctx.dragged_id().is_some() && !carrying;
+    let held = hover.open
+        && (egui::Popup::is_any_open(ctx)
+            || ctx.dragged_id().is_some()
+            || ctx.memory(|memory| memory.has_focus(egui::Id::new("sidebar-search"))));
+    let wanted = (over && (hover.open || !busy)) || held;
+    if wanted {
+        hover.left = None;
+        if !hover.open {
+            let arrived = *hover.arrived.get_or_insert(now);
+            let delay = if carrying { 0.0 } else { RAIL_OPEN_DELAY };
+            let waited = now - arrived;
+            if waited >= delay {
+                hover.open = true;
+            } else {
+                ctx.request_repaint_after_secs((delay - waited) as f32);
+            }
+        }
+    } else {
+        hover.arrived = None;
+        if hover.open {
+            let left = *hover.left.get_or_insert(now);
+            let waited = now - left;
+            if waited >= RAIL_CLOSE_DELAY {
+                hover.open = false;
+                hover.left = None;
+            } else {
+                ctx.request_repaint_after_secs((RAIL_CLOSE_DELAY - waited) as f32);
+            }
+        }
+    }
+    ctx.data_mut(|data| data.insert_temp(id, hover));
+    hover.open
 }
 
 fn expanded_art_rect(ui: &egui::Ui) -> Rect {
@@ -825,6 +1163,7 @@ fn nav_row(
     icon: Icon,
     label: &str,
     active: bool,
+    rail: Option<f32>,
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
     if ui.is_rect_visible(rect) {
@@ -833,15 +1172,24 @@ fn nav_row(
         } else {
             palette.secondary
         };
-        let icon_rect =
-            Rect::from_center_size(pos2(rect.left() + 22.0, rect.center().y), Vec2::splat(22.0));
+        // In the rail the icon stands over the covers' centre line, and its
+        // label fades in with the card.
+        let icon_x = if rail.is_some() {
+            LIBRARY_ITEM_PADDING + 22.0
+        } else {
+            22.0
+        };
+        let icon_rect = Rect::from_center_size(
+            pos2(rect.left() + icon_x, rect.center().y),
+            Vec2::splat(22.0),
+        );
         icon.image(color, 22.0).paint_at(ui, icon_rect);
         ui.painter().text(
-            pos2(rect.left() + 46.0, rect.center().y),
+            pos2(rect.left() + icon_x + 24.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
             label,
             theme::bold(15.0),
-            color,
+            color.gamma_multiply(rail.unwrap_or(1.0)),
         );
     }
     response.widget_info(|| {
@@ -851,10 +1199,14 @@ fn nav_row(
     response
 }
 
-fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
+/// The sidebar's contents. `rail` is how far the folded sidebar's card is
+/// open, from 0 to 1, and `None` in the full sidebar.
+fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>, rail: Option<f32>) {
     let palette = app.palette;
     let page = app.page().clone();
     let locale = app.locale;
+    // What only the open card shows fades in as it opens.
+    let fade = rail.unwrap_or(1.0);
     ui.add_space(4.0);
     if nav_row(
         ui,
@@ -862,6 +1214,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
         Icon::House,
         &gettext(locale, "Home"),
         page == Page::Home,
+        rail,
     )
     .clicked()
     {
@@ -873,6 +1226,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
         Icon::Search,
         &gettext(locale, "Search"),
         page == Page::Search,
+        rail,
     )
     .clicked()
     {
@@ -898,10 +1252,16 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
     let mut focus_search = false;
 
     ui.horizontal(|ui| {
-        ui.add_space(6.0);
+        // In the rail the icon stands over the covers' centre line.
+        ui.add_space(if rail.is_some() {
+            LIBRARY_ITEM_PADDING + 11.0
+        } else {
+            6.0
+        });
         theme::icon(ui, Icon::Library, 22.0, palette.secondary);
         ui.add_space(2.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.multiply_opacity(fade);
             ui.spacing_mut().item_spacing.x = 2.0;
             if theme::icon_button(
                 ui,
@@ -918,15 +1278,19 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
             {
                 app.actions.push(Action::ToggleSidebar);
             }
-            let grid = app.settings.sidebar_grid;
-            let (icon, label) = if grid {
-                (Icon::LayoutList, gettext(locale, "Show as list"))
-            } else {
-                (Icon::LayoutGrid, gettext(locale, "Show as grid"))
-            };
-            if theme::icon_button(ui, icon, 16.0, palette.secondary, palette.text, &label).clicked()
-            {
-                app.actions.push(Action::SetLibraryGrid(!grid));
+            // The rail's covers are always rows.
+            if rail.is_none() {
+                let grid = app.settings.sidebar_grid;
+                let (icon, label) = if grid {
+                    (Icon::LayoutList, gettext(locale, "Show as list"))
+                } else {
+                    (Icon::LayoutGrid, gettext(locale, "Show as grid"))
+                };
+                if theme::icon_button(ui, icon, 16.0, palette.secondary, palette.text, &label)
+                    .clicked()
+                {
+                    app.actions.push(Action::SetLibraryGrid(!grid));
+                }
             }
             // One item never deserved a menu: the plus creates directly.
             if theme::icon_button(
@@ -967,6 +1331,10 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
             // to them in the narrowest sidebar, where the icon still names
             // the section.
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                if rail.is_some() {
+                    shelf_menu(app, ui, &mut filter);
+                    return;
+                }
                 let heading = gettext(locale, "Library");
                 let room = ui.available_width() - 6.0;
                 let fits = [15.0, 14.0, 13.0].into_iter().find(|&size| {
@@ -984,39 +1352,40 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
     });
     ui.add_space(6.0);
 
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        for (value, label) in [
-            (Filter::Playlists, gettext(locale, "Playlists")),
-            (Filter::Albums, gettext(locale, "Albums")),
-            (Filter::Artists, gettext(locale, "Artists")),
-            (Filter::Podcasts, gettext(locale, "Podcasts")),
-        ] {
-            if theme::soft_button(ui, &palette, None, &label, filter == value).clicked() {
-                filter = value;
+    if rail.is_none() {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+            for (value, label) in shelf_labels(locale) {
+                if theme::soft_button(ui, &palette, None, &label, filter == value).clicked() {
+                    filter = value;
+                }
             }
-        }
-    });
+        });
+        let sort = selected_sort(app, filter);
+        sort_menu(app, ui, filter, sort);
+    }
     let sort = selected_sort(app, filter);
-    sort_menu(app, ui, filter, sort);
     ui.data_mut(|data| {
         data.insert_temp(filter_id, filter);
         data.insert_temp(show_search_id, show_search);
     });
     if show_search {
         ui.add_space(4.0);
-        let response = super::widgets::search_field(
-            ui,
-            &palette,
-            app.locale,
-            egui::Id::new("sidebar-search"),
-            &mut app.library.filter,
-            &gettext(locale, "Search in Your Library"),
-            ui.available_width() - 4.0,
-        );
-        if focus_search {
-            response.request_focus();
-        }
+        ui.scope(|ui| {
+            ui.multiply_opacity(fade);
+            let response = super::widgets::search_field(
+                ui,
+                &palette,
+                app.locale,
+                egui::Id::new("sidebar-search"),
+                &mut app.library.filter,
+                &gettext(locale, "Search in Your Library"),
+                ui.available_width() - 4.0,
+            );
+            if focus_search {
+                response.request_focus();
+            }
+        });
     }
     ui.add_space(6.0);
 
@@ -1239,7 +1608,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                     },
                 );
             }
-            if app.settings.sidebar_grid {
+            if shows_grid(app) {
                 library_grid(
                     app,
                     ui,
@@ -1256,7 +1625,15 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                 return;
             }
 
-            let compact = app.settings.sidebar_compact;
+            // The rail's covers are what it shows.
+            let compact = app.settings.sidebar_compact && rail.is_none();
+            // Row fills stop at the rail's or card's edge rather than run
+            // under it, so they keep their rounded corners there.
+            let fill_right = if rail.is_some() {
+                ui.clip_rect().right()
+            } else {
+                f32::INFINITY
+            };
             let row_height = if compact {
                 COMPACT_ROW_HEIGHT
             } else {
@@ -1286,9 +1663,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
             let art = app.backend.art().clone();
             super::widgets::virtual_rows(ui, entries.len(), row_height, |ui, index| {
                 let entry = &entries[index];
-                if !app.settings.sidebar_compact
-                    && let Some(image) = &entry.image
-                {
+                if !compact && let Some(image) = &entry.image {
                     // Prepare the enlarged preview before this row is opened.
                     app.softened_covers.texture(ui.ctx(), &art, image);
                 }
@@ -1339,24 +1714,25 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                 // click on it does not also play from the row.
                 let mut cover_took_click = false;
                 if ui.is_rect_visible(rect) {
+                    let fill = rect.with_max_x(rect.right().min(fill_right));
                     if active {
                         ui.painter()
-                            .rect_filled(rect, CornerRadius::same(6), palette.surface);
+                            .rect_filled(fill, CornerRadius::same(6), palette.surface);
                     } else if response.hovered() {
                         ui.painter().rect_filled(
-                            rect,
+                            fill,
                             CornerRadius::same(6),
                             palette.surface_hover.gamma_multiply(0.6),
                         );
                     }
                     if drop_hover {
                         ui.painter().rect_filled(
-                            rect,
+                            fill,
                             CornerRadius::same(6),
                             palette.accent.gamma_multiply(0.18),
                         );
                         ui.painter().rect_stroke(
-                            rect,
+                            fill,
                             CornerRadius::same(6),
                             egui::Stroke::new(1.5, palette.accent),
                             egui::StrokeKind::Inside,
@@ -1366,8 +1742,15 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                         palette.accent
                     } else {
                         palette.text
+                    }
+                    .gamma_multiply(fade);
+                    let secondary = palette.secondary.gamma_multiply(fade);
+                    // Folders cannot indent their covers out of the rail.
+                    let indent = if rail.is_some() {
+                        0.0
+                    } else {
+                        f32::from(entry.depth) * 14.0
                     };
-                    let indent = f32::from(entry.depth) * 14.0;
                     if let Some((_, collapsed, _)) = &entry.folder {
                         let chevron = if *collapsed {
                             Icon::ChevronRight
@@ -1412,7 +1795,7 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                                 rect.center().y + 10.0,
                                 &entry.subtitle,
                                 theme::regular(12.5),
-                                palette.secondary,
+                                secondary,
                             );
                         }
                     } else if compact {
@@ -1484,8 +1867,18 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                             rect.center().y + 10.0,
                             &entry.subtitle,
                             theme::regular(12.5),
-                            palette.secondary,
+                            secondary,
                         );
+                        // The folded rail has no room for the speaker, so a
+                        // dot on the cover marks what is playing.
+                        if playing && fade < 1.0 {
+                            ui.painter().circle(
+                                cover_rect.right_bottom() - Vec2::splat(2.0),
+                                5.0,
+                                palette.accent.gamma_multiply(1.0 - fade),
+                                egui::Stroke::new(2.0, palette.panel.gamma_multiply(1.0 - fade)),
+                            );
+                        }
                         // Hovering the art offers to play right from here.
                         cover_took_click = cover_play_button(
                             app, ui, entry, index, cover_rect, &response, playing,
@@ -1497,21 +1890,19 @@ fn contents(app: &mut App, ui: &mut egui::Ui, grid_art: Option<Rect>) {
                             Vec2::splat(16.0),
                         );
                         Icon::Volume2
-                            .image(palette.accent, 16.0)
+                            .image(palette.accent.gamma_multiply(fade), 16.0)
                             .paint_at(ui, icon_rect);
                     } else if pinned {
                         let icon_rect = Rect::from_center_size(
                             pos2(rect.right() - 16.0, rect.center().y),
                             Vec2::splat(13.0),
                         );
-                        Icon::Pin
-                            .image(palette.secondary, 13.0)
-                            .paint_at(ui, icon_rect);
+                        Icon::Pin.image(secondary, 13.0).paint_at(ui, icon_rect);
                     }
                     // Rows that cannot take the song step back a little.
                     if dragging_song && !droppable {
                         ui.painter().rect_filled(
-                            rect,
+                            fill,
                             CornerRadius::same(6),
                             palette.panel.gamma_multiply(0.5),
                         );

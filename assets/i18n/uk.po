@@ -1458,6 +1458,22 @@ msgstr ""
 msgid "Show names without covers in the sidebar."
 msgstr "Показувати назви без обкладинок на бічній панелі."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Згорнута бічна панель бібліотеки"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Показувати на бічній панелі лише обкладинки. Вона розкривається над сторінкою, поки на ній вказівник."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Розгорнути бічну панель"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Згорнути бічну панель"
+
 #: src/ui/settings.rs:846
 msgid "Show each track on one line without a cover."
 msgstr "Показувати кожен трек в один рядок без обкладинки."

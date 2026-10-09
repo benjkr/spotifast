@@ -1440,6 +1440,22 @@ msgstr "現在のカバーの色をページとプレイヤーバーに使いま
 msgid "Show names without covers in the sidebar."
 msgstr "サイドバーにカバーなしで名前を表示します。"
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "折りたたんだライブラリサイドバー"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "サイドバーにカバーだけを表示します。ポインタを置くと、ページの上に開きます。"
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "サイドバーを展開"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "サイドバーを折りたたむ"
+
 #: src/ui/settings.rs:846
 msgid "Show each track on one line without a cover."
 msgstr "各曲をカバーなしで1行に表示します。"

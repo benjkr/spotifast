@@ -1452,6 +1452,22 @@ msgstr ""
 msgid "Show names without covers in the sidebar."
 msgstr "Mostra i nomi senza copertine nella barra laterale."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Barra laterale ripiegata"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Mostra solo le copertine nella barra laterale. Si apre sopra la pagina mentre il puntatore vi resta sopra."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Espandi barra laterale"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Comprimi barra laterale"
+
 #: src/ui/settings.rs:846
 msgid "Show each track on one line without a cover."
 msgstr "Mostra ogni brano su una riga, senza copertina."

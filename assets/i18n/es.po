@@ -1450,6 +1450,22 @@ msgstr ""
 msgid "Show names without covers in the sidebar."
 msgstr "Muestra los nombres sin carátulas en la barra lateral."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Barra lateral plegada"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Muestra solo las carátulas en la barra lateral. Se abre sobre la página mientras el puntero se detiene en ella."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Desplegar barra lateral"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Plegar barra lateral"
+
 #: src/ui/settings.rs:846
 msgid "Show each track on one line without a cover."
 msgstr "Muestra cada canción en una línea, sin carátula."

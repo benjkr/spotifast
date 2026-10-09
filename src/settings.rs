@@ -274,6 +274,9 @@ pub struct Settings {
     pub sidebar_compact: bool,
     /// Show the Library as responsive cover cards instead of rows.
     pub sidebar_grid: bool,
+    /// Fold the sidebar to a strip of covers that opens as a card over the
+    /// page while the pointer rests on it.
+    pub sidebar_rail: bool,
     pub sidebar_width: f32,
     pub lyrics_width: f32,
     pub queue_width: f32,
@@ -437,6 +440,7 @@ impl Default for Settings {
             art_expanded: false,
             sidebar_compact: false,
             sidebar_grid: false,
+            sidebar_rail: false,
             sidebar_width: 250.0,
             lyrics_width: 360.0,
             queue_width: 360.0,
@@ -1165,6 +1169,20 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let restored: Settings = serde_json::from_str(&json).unwrap();
         assert!(restored.sidebar_grid);
+    }
+
+    #[test]
+    fn sidebar_rail_round_trips_and_older_settings_keep_the_full_sidebar() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!old.sidebar_rail);
+
+        let settings = Settings {
+            sidebar_rail: true,
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&settings).unwrap();
+        let restored: Settings = serde_json::from_str(&json).unwrap();
+        assert!(restored.sidebar_rail);
     }
 
     #[test]

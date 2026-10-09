@@ -1460,6 +1460,22 @@ msgstr "Sayfalarda ve çalar çubuğunda mevcut kapağın rengini kullanır."
 msgid "Show names without covers in the sidebar."
 msgstr "Kenar çubuğunda adları kapaksız gösterir."
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "Daraltılmış kitaplık kenar çubuğu"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "Kenar çubuğunda yalnızca kapakları gösterir. İşaretçi üzerinde durdukça sayfanın üzerinde açılır."
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "Kenar çubuğunu genişlet"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "Kenar çubuğunu daralt"
+
 #: src/ui/settings.rs:846
 msgid "Show each track on one line without a cover."
 msgstr "Her parçayı tek bir satırda ve kapaksız gösterir."

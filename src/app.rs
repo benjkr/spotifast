@@ -321,6 +321,10 @@ pub struct App {
     pub taskbar_hiding_supported: bool,
     #[cfg(any(test, feature = "demo"))]
     pub demo_windows_controls: bool,
+    /// Holds the folded sidebar's card open in captures, which have no
+    /// pointer to rest on it.
+    #[cfg(any(test, feature = "demo"))]
+    pub demo_rail_open: bool,
     applied_dark: Option<bool>,
     /// Reveals new colours from the middle of the window outwards.
     theme_transition: fastframe_theme::Transition,
@@ -820,6 +824,8 @@ impl App {
             taskbar_hiding_supported: cfg!(windows),
             #[cfg(any(test, feature = "demo"))]
             demo_windows_controls: false,
+            #[cfg(any(test, feature = "demo"))]
+            demo_rail_open: false,
             applied_dark: None,
             theme_transition: fastframe_theme::Transition::default(),
             reveal_theme_changes: true,
@@ -9202,6 +9208,10 @@ impl App {
             }
             Action::SetLibraryGrid(grid) => {
                 self.settings.sidebar_grid = grid;
+                self.mark_settings_dirty();
+            }
+            Action::SetSidebarRail(rail) => {
+                self.settings.sidebar_rail = rail;
                 self.mark_settings_dirty();
             }
             Action::ToggleLibraryFolder(id) => {

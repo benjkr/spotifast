@@ -1407,6 +1407,22 @@ msgstr "在頁面和播放列中使用目前封面的顏色。"
 msgid "Show names without covers in the sidebar."
 msgstr "在側邊欄中只顯示名稱，不顯示封面。"
 
+#: src/ui/settings.rs:804
+msgid "Collapsed library sidebar"
+msgstr "摺疊的音樂庫側邊欄"
+
+#: src/ui/settings.rs:889
+msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
+msgstr "在側邊欄中只顯示封面。指標停在上面時，它會在頁面上方展開。"
+
+#: src/ui/sidebar.rs:820
+msgid "Expand sidebar"
+msgstr "展開側邊欄"
+
+#: src/ui/sidebar.rs:822
+msgid "Collapse sidebar"
+msgstr "摺疊側邊欄"
+
 #: src/ui/settings.rs:846
 msgid "Show each track on one line without a cover."
 msgstr "每首歌曲顯示為一行，不顯示封面。"
