@@ -112,6 +112,9 @@ candidate, and report which platforms actually produced the captures.
 Include light/dark and narrow/normal window selectors, plus Before and After
 buttons or a comparison slider. Show relevant open menus, loading, error and
 empty states. Explain the visible change briefly and list any remaining checks.
+For hover, animation or other motion, add a short video recorded with the demo
+build's `--demo-record` and `--demo-pointer` flags, described in
+[Settings and files](docs/_reference/settings-and-files.md).
 
 When reviewing several changes, provide one index with the PR number and name,
 a selector and Previous/Next controls, and a direct link to each comparison.

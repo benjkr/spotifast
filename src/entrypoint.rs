@@ -81,6 +81,21 @@ struct Cli {
     #[cfg(feature = "demo")]
     #[arg(long, value_name = "X,Y:X,Y", value_parser = parse_demo_drag)]
     demo_drag: Option<[egui::Pos2; 2]>,
+
+    /// Record the demo window into this directory as `frame-00000.png`
+    /// onwards, 60 to a second on a clock of the recording's own, then
+    /// exit. Implies `--demo`. Waits `--demo-shot-delay` for cover art first.
+    #[cfg(feature = "demo")]
+    #[arg(long, value_name = "DIR")]
+    demo_record: Option<std::path::PathBuf>,
+
+    /// The pointer's path for `--demo-record`: stops as `SECONDS:X,Y` in
+    /// points, separated by `;`, eased from one to the next. A `!` after a
+    /// stop clicks there, and `!r` right-clicks. The recording ends half a
+    /// second after the last stop.
+    #[cfg(feature = "demo")]
+    #[arg(long, value_name = "T:X,Y;...", value_parser = parse_demo_pointer)]
+    demo_pointer: Option<PointerPath>,
 }
 
 /// Remote control of the running instance, for Raycast scripts, launchers,
@@ -355,8 +370,11 @@ pub(crate) fn run() -> eframe::Result<()> {
     // Demo mode invents plays, settings, and a signed-in account. Without a
     // folder of its own it would write them into the real profile, where
     // they would pass for the user's history.
+    // A capture, a still or a recording, is a demo run too.
     #[cfg(feature = "demo")]
-    let cli = if (cli.demo || cli.demo_shot.is_some()) && cli.demo_data.is_none() {
+    let capture = cli.demo_shot.is_some() || cli.demo_record.is_some();
+    #[cfg(feature = "demo")]
+    let cli = if (cli.demo || capture) && cli.demo_data.is_none() {
         Cli {
             demo_data: Some(
                 std::env::temp_dir().join(format!("spotifast-demo-{}", std::process::id())),
@@ -392,7 +410,7 @@ pub(crate) fn run() -> eframe::Result<()> {
     // A second launch surfaces the instance already running instead of
     // starting a rival one. Held for the lifetime of the process.
     #[cfg(feature = "demo")]
-    let demo = cli.demo || cli.demo_shot.is_some();
+    let demo = cli.demo || capture;
     #[cfg(feature = "demo")]
     let guarded = !demo;
     #[cfg(not(feature = "demo"))]
@@ -472,7 +490,7 @@ pub(crate) fn run() -> eframe::Result<()> {
         options.restore_sign_in = false;
     }
     #[cfg(feature = "demo")]
-    if cli.demo_shot.is_some() {
+    if capture {
         options = app::AppOptions {
             media_controls: false,
             restore_sign_in: false,
@@ -535,6 +553,16 @@ pub(crate) fn run() -> eframe::Result<()> {
         asked: false,
     });
     #[cfg(feature = "demo")]
+    let record = cli.demo_record.clone().map(|dir| Record {
+        dir,
+        pointer: cli.demo_pointer.clone().unwrap_or_default(),
+        due: std::time::Instant::now() + std::time::Duration::from_millis(cli.demo_shot_delay),
+        frame: 0,
+        start: None,
+        asked: 0,
+        saved: 0,
+    });
+    #[cfg(feature = "demo")]
     let demo_drag = cli
         .demo_drag
         .map(|[from, to]| DemoDrag { from, to, frame: 0 });
@@ -555,6 +583,8 @@ pub(crate) fn run() -> eframe::Result<()> {
         let creator_waker = waker.clone();
         #[cfg(feature = "demo")]
         let creator_shot = shot.clone();
+        #[cfg(feature = "demo")]
+        let creator_record = record.clone();
         let mini = lease.peek(MiniWindow::wanted);
         #[cfg(all(windows, target_arch = "aarch64"))]
         let locale = lease.peek(|app| app.locale);
@@ -657,6 +687,8 @@ pub(crate) fn run() -> eframe::Result<()> {
                     shot: creator_shot.clone(),
                     #[cfg(feature = "demo")]
                     drag: demo_drag,
+                    #[cfg(feature = "demo")]
+                    record: creator_record.clone(),
                 }))
             }),
         )
@@ -722,24 +754,64 @@ fn parse_demo_size(spec: &str) -> Result<[f32; 2], String> {
 
 #[cfg(feature = "demo")]
 fn parse_demo_drag(spec: &str) -> Result<[egui::Pos2; 2], String> {
-    let point = |point: &str| -> Result<egui::Pos2, String> {
-        let (x, y) = point
-            .split_once(',')
-            .ok_or_else(|| format!("expected X,Y, got {point}"))?;
-        let x: f32 = x
-            .trim()
-            .parse()
-            .map_err(|_| format!("invalid x in {point}"))?;
-        let y: f32 = y
-            .trim()
-            .parse()
-            .map_err(|_| format!("invalid y in {point}"))?;
-        Ok(egui::pos2(x, y))
-    };
     let (from, to) = spec
         .split_once(':')
         .ok_or_else(|| format!("expected X,Y:X,Y, got {spec}"))?;
-    Ok([point(from)?, point(to)?])
+    Ok([parse_point(from)?, parse_point(to)?])
+}
+
+#[cfg(feature = "demo")]
+fn parse_point(point: &str) -> Result<egui::Pos2, String> {
+    let (x, y) = point
+        .split_once(',')
+        .ok_or_else(|| format!("expected X,Y, got {point}"))?;
+    let x: f32 = x
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid x in {point}"))?;
+    let y: f32 = y
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid y in {point}"))?;
+    Ok(egui::pos2(x, y))
+}
+
+#[cfg(feature = "demo")]
+fn parse_demo_pointer(spec: &str) -> Result<PointerPath, String> {
+    let mut stops: Vec<PointerStop> = Vec::new();
+    for stop in spec
+        .split(';')
+        .map(str::trim)
+        .filter(|stop| !stop.is_empty())
+    {
+        let (at, rest) = stop
+            .split_once(':')
+            .ok_or_else(|| format!("expected SECONDS:X,Y, got {stop}"))?;
+        let at: f64 = at
+            .trim()
+            .parse()
+            .map_err(|_| format!("invalid seconds in {stop}"))?;
+        let rest = rest.trim();
+        let (point, click) = if let Some(point) = rest.strip_suffix("!r") {
+            (point, Some(egui::PointerButton::Secondary))
+        } else if let Some(point) = rest.strip_suffix('!') {
+            (point, Some(egui::PointerButton::Primary))
+        } else {
+            (rest, None)
+        };
+        if stops.last().is_some_and(|last| at < last.at) {
+            return Err(format!("stops must not go back in time, got {stop}"));
+        }
+        stops.push(PointerStop {
+            at,
+            pos: parse_point(point)?,
+            click,
+        });
+    }
+    if stops.is_empty() {
+        return Err("expected at least one SECONDS:X,Y stop".into());
+    }
+    Ok(PointerPath(stops))
 }
 
 // Windows can stop drawing a window created outside the current monitors.
@@ -1028,6 +1100,27 @@ mod native_window_tests {
 
     #[cfg(feature = "demo")]
     #[test]
+    fn demo_pointer_eases_between_stops_and_clicks_once_on_arrival() {
+        let path = parse_demo_pointer("0:10,20; 1:110,20!; 2:110,120").unwrap();
+        let right = parse_demo_pointer("0:5,5!r").unwrap();
+        assert_eq!(
+            right.clicks(-1.0, 0.0).collect::<Vec<_>>(),
+            [(egui::pos2(5.0, 5.0), egui::PointerButton::Secondary)]
+        );
+        assert_eq!(path.at(-1.0), Some(egui::pos2(10.0, 20.0)));
+        assert_eq!(path.at(0.5), Some(egui::pos2(60.0, 20.0)));
+        assert_eq!(path.at(1.0), Some(egui::pos2(110.0, 20.0)));
+        assert_eq!(path.at(9.0), Some(egui::pos2(110.0, 120.0)));
+        assert_eq!(path.length(), 2.5);
+        assert_eq!(path.clicks(0.9, 1.0).count(), 1);
+        assert_eq!(path.clicks(1.0, 1.1).count(), 0, "a click lands once");
+        assert!(parse_demo_pointer("1:0,0;0:0,0").is_err());
+        assert!(parse_demo_pointer("").is_err());
+        assert!(parse_demo_pointer("0:10").is_err());
+    }
+
+    #[cfg(feature = "demo")]
+    #[test]
     fn demo_drag_presses_at_the_first_point_and_holds_at_the_second() {
         let [from, to] = parse_demo_drag("10,20:110, 220").unwrap();
         assert_eq!(
@@ -1121,6 +1214,126 @@ struct Shell {
     /// A drag held for `--demo-drag`, if this run shows one.
     #[cfg(feature = "demo")]
     drag: Option<DemoDrag>,
+    /// A frame-by-frame recording for `--demo-record`.
+    #[cfg(feature = "demo")]
+    record: Option<Record>,
+}
+
+/// One stop of a `--demo-pointer` path.
+#[cfg(feature = "demo")]
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PointerStop {
+    /// Seconds into the recording.
+    at: f64,
+    pos: egui::Pos2,
+    /// The button clicked on arriving, if any.
+    click: Option<egui::PointerButton>,
+}
+
+/// A scripted pointer for `--demo-record`, stops in time order.
+#[cfg(feature = "demo")]
+#[derive(Clone, Debug, Default, PartialEq)]
+struct PointerPath(Vec<PointerStop>);
+
+#[cfg(feature = "demo")]
+impl PointerPath {
+    /// Where the pointer is `t` seconds in, eased between stops so it
+    /// starts and settles like a hand.
+    fn at(&self, t: f64) -> Option<egui::Pos2> {
+        let first = self.0.first()?;
+        if t <= first.at {
+            return Some(first.pos);
+        }
+        for pair in self.0.windows(2) {
+            let [from, to] = [pair[0], pair[1]];
+            if t < to.at {
+                let k = ((t - from.at) / (to.at - from.at)) as f32;
+                let eased = 0.5 - (k * std::f32::consts::PI).cos() / 2.0;
+                return Some(from.pos.lerp(to.pos, eased));
+            }
+        }
+        self.0.last().map(|stop| stop.pos)
+    }
+
+    /// The clicks due after `before` seconds and by `now`.
+    fn clicks(
+        &self,
+        before: f64,
+        now: f64,
+    ) -> impl Iterator<Item = (egui::Pos2, egui::PointerButton)> + '_ {
+        self.0
+            .iter()
+            .filter(move |stop| stop.at > before && stop.at <= now)
+            .filter_map(|stop| stop.click.map(|button| (stop.pos, button)))
+    }
+
+    /// How long the recording runs: half a second past the last stop.
+    fn length(&self) -> f64 {
+        self.0.last().map_or(3.0, |stop| stop.at + 0.5)
+    }
+}
+
+/// A recording on a clock of its own. Each frame is a 60th of a second
+/// after the last however long saving took, so animations, hover delays
+/// and the pointer play back at their real speed.
+#[cfg(feature = "demo")]
+#[derive(Clone)]
+struct Record {
+    dir: std::path::PathBuf,
+    pointer: PointerPath,
+    /// When cover art has had its time and the recording starts.
+    due: std::time::Instant,
+    frame: u64,
+    /// The frame the recording started on.
+    start: Option<u64>,
+    asked: u64,
+    saved: u64,
+}
+
+#[cfg(feature = "demo")]
+impl Record {
+    const FPS: f64 = 60.0;
+
+    fn clock(&self, frame: u64) -> f64 {
+        frame as f64 / Self::FPS
+    }
+
+    /// Seconds into the recording at `frame`; zero while it waits.
+    fn script_time(&self, frame: u64) -> f64 {
+        self.start
+            .map_or(0.0, |start| self.clock(frame.saturating_sub(start)))
+    }
+
+    fn events(&mut self) -> Vec<egui::Event> {
+        let frame = self.frame;
+        self.frame += 1;
+        if self.start.is_none() && std::time::Instant::now() >= self.due {
+            self.start = Some(frame);
+        }
+        let now = self.script_time(frame);
+        let mut events = Vec::new();
+        if let Some(pos) = self.pointer.at(now) {
+            events.push(egui::Event::PointerMoved(pos));
+        }
+        let before = if self.start.is_some_and(|start| frame > start) {
+            self.script_time(frame - 1)
+        } else {
+            f64::NEG_INFINITY
+        };
+        if self.start.is_some() {
+            for (pos, button) in self.pointer.clicks(before, now).collect::<Vec<_>>() {
+                for pressed in [true, false] {
+                    events.push(egui::Event::PointerButton {
+                        pos,
+                        button,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                }
+            }
+        }
+        events
+    }
 }
 
 /// A scripted pointer for `--demo-drag`: rest on `from`, press there, glide
@@ -1178,6 +1391,65 @@ struct Shot {
 
 #[cfg(feature = "demo")]
 impl Shell {
+    /// Asks for every frame of the recording and writes each as it comes
+    /// back, a frame or two later; closes once the last one is written.
+    fn drive_record(&mut self, ctx: &egui::Context) {
+        let Some(record) = self.record.as_mut() else {
+            return;
+        };
+        ctx.request_repaint();
+        let images: Vec<_> = ctx.input(|input| {
+            input
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                    _ => None,
+                })
+                .collect()
+        });
+        for image in images {
+            let [width, height] = [image.size[0] as u32, image.size[1] as u32];
+            let pixels: Vec<u8> = image
+                .pixels
+                .iter()
+                .flat_map(|pixel| pixel.to_srgba_unmultiplied())
+                .collect();
+            let path = record.dir.join(format!("frame-{:05}.png", record.saved));
+            match image::RgbaImage::from_raw(width, height, pixels).map(|buffer| buffer.save(&path))
+            {
+                Some(Ok(())) => {}
+                Some(Err(error)) => log::error!("could not write {}: {error}", path.display()),
+                None => log::error!("the frame buffer did not match {width}x{height}"),
+            }
+            record.saved += 1;
+        }
+        let frame = record.frame.saturating_sub(1);
+        if record.start.is_none() {
+            return;
+        }
+        if record.script_time(frame) <= record.pointer.length() {
+            if record.asked == 0
+                && let Err(error) = std::fs::create_dir_all(&record.dir)
+            {
+                log::error!("could not create {}: {error}", record.dir.display());
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            record.asked += 1;
+        } else if record.saved >= record.asked
+            // A frame the renderer never sent back must not hold the run open.
+            || record.script_time(frame) > record.pointer.length() + 2.0
+        {
+            log::info!(
+                "recorded {} frames to {}",
+                record.saved,
+                record.dir.display()
+            );
+            self.record = None;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
     fn drive_shot(&mut self, ctx: &egui::Context) {
         let Some(shot) = self.shot.as_mut() else {
             return;
@@ -1227,6 +1499,20 @@ impl eframe::App for Shell {
 
     #[cfg(feature = "demo")]
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        if let Some(record) = self.record.as_mut() {
+            // The script owns the pointer, and the recording owns the clock.
+            raw_input.events.retain(|event| {
+                !matches!(
+                    event,
+                    egui::Event::PointerMoved(_)
+                        | egui::Event::PointerButton { .. }
+                        | egui::Event::PointerGone
+                )
+            });
+            raw_input.time = Some(record.clock(record.frame));
+            raw_input.predicted_dt = (1.0 / Record::FPS) as f32;
+            raw_input.events.extend(record.events());
+        }
         if let Some(drag) = self.drag.as_mut() {
             // The script owns the pointer: drop whatever the real one did.
             raw_input.events.retain(|event| {
@@ -1313,6 +1599,8 @@ impl eframe::App for Shell {
             .sync(app.thumb_state(ctx.system_theme() != Some(egui::Theme::Light)));
         #[cfg(feature = "demo")]
         self.drive_shot(ctx);
+        #[cfg(feature = "demo")]
+        self.drive_record(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
