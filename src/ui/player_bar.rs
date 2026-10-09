@@ -969,9 +969,8 @@ fn section_marks(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, tra
         None => {}
     }
     let x_of = |ms: u32| track.left() + track.width() * (ms as f32 / duration as f32);
-    let ms_at = |x: f32| {
-        (((x - track.left()) / track.width()).clamp(0.0, 1.0) * duration as f32) as u32
-    };
+    let ms_at =
+        |x: f32| (((x - track.left()) / track.width()).clamp(0.0, 1.0) * duration as f32) as u32;
     let cy = track.center().y;
     ui.painter().rect_filled(
         Rect::from_min_max(pos2(x_of(start), cy - 4.0), pos2(x_of(end), cy + 4.0)),
@@ -993,7 +992,9 @@ fn section_marks(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, tra
             let at = if is_start {
                 ms_at(pointer.x).min(end.saturating_sub(crate::app::SECTION_MIN_MS))
             } else {
-                ms_at(pointer.x).max(start + crate::app::SECTION_MIN_MS).min(duration)
+                ms_at(pointer.x)
+                    .max(start + crate::app::SECTION_MIN_MS)
+                    .min(duration)
             };
             ui.data_mut(|data| data.insert_temp(drag_id, (is_start, at)));
         }
@@ -1020,12 +1021,10 @@ fn section_marks(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>, tra
                 theme::regular(11.0),
                 palette.text,
             );
-            let pill = Rect::from_center_size(
-                pos2(x, cy - 17.0),
-                label.size() + vec2(10.0, 4.0),
-            );
+            let pill = Rect::from_center_size(pos2(x, cy - 17.0), label.size() + vec2(10.0, 4.0));
             ui.painter().rect_filled(pill, 4.0, palette.surface);
-            ui.painter().galley(pill.center() - label.size() / 2.0, label, palette.text);
+            ui.painter()
+                .galley(pill.center() - label.size() / 2.0, label, palette.text);
         }
     }
 }
@@ -1041,9 +1040,12 @@ fn section_toggle(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>) {
     let tooltip = match &section {
         // Translators: The section-repeat button's tooltip while a stretch
         // of the song repeats. {start} and {end} are times such as 0:50.
-        Some(section) if on => gettext(app.locale, "Repeating {start} to {end}. Right-click to change")
-            .replace("{start}", &util::format_duration_ms(section.start_ms))
-            .replace("{end}", &util::format_duration_ms(section.end_ms)),
+        Some(section) if on => gettext(
+            app.locale,
+            "Repeating {start} to {end}. Right-click to change",
+        )
+        .replace("{start}", &util::format_duration_ms(section.start_ms))
+        .replace("{end}", &util::format_duration_ms(section.end_ms)),
         _ => label.to_string(),
     };
     let response = ui
@@ -1052,8 +1054,16 @@ fn section_toggle(app: &mut App, ui: &mut egui::Ui, now: Option<&NowPlaying>) {
                 ui,
                 Icon::SectionRepeat,
                 18.0,
-                if on { palette.accent } else { palette.secondary },
-                if on { palette.accent_hover } else { palette.text },
+                if on {
+                    palette.accent
+                } else {
+                    palette.secondary
+                },
+                if on {
+                    palette.accent_hover
+                } else {
+                    palette.text
+                },
                 &tooltip,
             )
         })
@@ -1098,7 +1108,12 @@ fn section_editor(app: &mut App, ui: &mut egui::Ui, now: &NowPlaying) {
         .map_or((now.position_ms, now.position_ms), |section| {
             (section.start_ms, section.end_ms)
         });
-    theme::text(ui, gettext(locale, "Repeat a section"), theme::medium(13.0), palette.text);
+    theme::text(
+        ui,
+        gettext(locale, "Repeat a section"),
+        theme::medium(13.0),
+        palette.text,
+    );
     ui.add_space(6.0);
     let at = now.position_ms / 1000 * 1000;
     let use_now = gettext(locale, "Use {time}").replace("{time}", &util::format_duration_ms(at));
@@ -1143,9 +1158,7 @@ fn section_editor(app: &mut App, ui: &mut egui::Ui, now: &NowPlaying) {
                     )
                 })
                 .inner;
-            field.widget_info(|| {
-                egui::WidgetInfo::text_edit(ui.is_enabled(), "", &text, &name)
-            });
+            field.widget_info(|| egui::WidgetInfo::text_edit(ui.is_enabled(), "", &text, &name));
             if field.has_focus() {
                 ui.data_mut(|data| data.insert_temp(id, text.clone()));
             }
