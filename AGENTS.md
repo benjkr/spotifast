@@ -235,9 +235,6 @@ Build environment:
   every crate bypasses the cache and spotifast loses incremental builds. mbx
   `linker.default` must stay `system`, because `path:rust-lld` breaks build
   scripts on Windows.
-- `scripts/bench-loop.ps1` times the edit loop. `scripts/bench-build.ps1`
-  breaks a rebuild into rustc passes, using a workspace wrapper plus
-  `MBX_INCREMENTAL=1`.
 - The default `milkdrop` feature needs `VCPKG_INSTALLATION_ROOT=C:\vcpkg` and
   `LIBCLANG_PATH=C:\Users\Administrator\AppData\Local\LLVM\LLVM\bin` in the
   shell. Builds without MilkDrop need neither.
