@@ -128,6 +128,15 @@ local commits if needed. Before pushing, verify that the commits being added
 contain no merge commits. Rewriting published history requires explicit
 maintainer approval and an exact force-with-lease guard; keep a recovery ref.
 
+## Opening pull requests
+
+When asked to open a PR, open it yourself: push the branch to `origin` and
+run `gh pr create`. Do not hand back a link or a command for someone else to
+run. The description starts with a short summary of the change and includes
+screenshots of the feature working, captured with the `demo` feature (a
+`--demo-record` video for anything that moves), uploaded so they render in
+the PR body.
+
 ## Disk use
 
 Builds go through [mbx](https://mr-boxington.jdx.dev), enabled for mise users
@@ -154,6 +163,74 @@ mise or mbx.
   shell on the machine.
 - Delete one-off QA, packaging, and release-validation directories (under
   `.cache/` or `~/.cache/`) once their result is recorded.
+
+## Local Windows machine
+
+These rules apply to this fork's Windows checkout
+(`C:\Users\Administrator\Documents\spotifast`).
+
+### Keep builds minimal
+
+Full cargo test, clippy and build runs flood the CPU. Run only targeted tests
+(`cargo test <name>`), never the full suite unasked, and keep the number of
+runs low. Let each run use all cores: no `-j` cap, normal priority. Ask before
+running the full `CONTRIBUTING.md` check list, and say plainly which checks
+were not run.
+
+Build environment:
+
+- mise and mbx are installed and mise is activated in both PowerShell
+  profiles, so `cargo` here resolves to mise's wrapper and goes through mbx.
+  A fresh shell needs the updated PATH. Windows PowerShell 5.1 only activates
+  mise when it starts inside the repo, not on `cd`.
+- Developer Mode is on (mbx needs symlinks). `target` is a symlink into
+  `%LOCALAPPDATA%\mbx\targets`, and this checkout is in mbx `target.keep`.
+- mbx wraps `cl.exe`, so cc-rs no longer sets INCLUDE/LIB. Builds need the
+  VS 18 x64 dev environment, which both PowerShell profiles enter at startup.
+  A shell started without it fails with `stddef.h` not found.
+- `%USERPROFILE%\.cargo\config.toml` sets dev `debug = "line-tables-only"`.
+  Never set `linker` there or `-C linker` in RUSTFLAGS: mbx does not model it,
+  every crate bypasses the cache and spotifast loses incremental builds. mbx
+  `linker.default` must stay `system`, because `path:rust-lld` breaks build
+  scripts on Windows.
+- `scripts/bench-loop.ps1` times the edit loop. `scripts/bench-build.ps1`
+  breaks a rebuild into rustc passes, using a workspace wrapper plus
+  `MBX_INCREMENTAL=1`.
+- The default `milkdrop` feature needs `VCPKG_INSTALLATION_ROOT=C:\vcpkg` and
+  `LIBCLANG_PATH=C:\Users\Administrator\AppData\Local\LLVM\LLVM\bin` in the
+  shell. Builds without MilkDrop need neither.
+
+### Build release exes without MilkDrop
+
+Build every exe meant to be run here with
+`cargo build --release --no-default-features`. MilkDrop is not used on this
+machine. CI-style checks (`--all-features` clippy and tests) still cover the
+MilkDrop code. Changing the project's default features or release workflow is
+a separate decision; ask before touching `Cargo.toml` defaults or
+`.github/workflows`.
+
+### Keep exe backups
+
+Never delete backups of built exes, and keep any exe worth keeping outside
+`target\`. mbx's automatic gc once deleted the whole managed target directory
+and four named test exes were lost.
+
+- Build in the warm release target, not a fresh target directory.
+- Cargo overwrites `target\release\spotifast.exe` whenever it is not running.
+  Copy it to `Documents\spotifast-exe-backups\` before every release build and
+  restore it afterwards.
+- For a test exe beside the main one, copy `target\release\deps\spotifast.exe`
+  to a folder outside `target\` under a new name.
+- Leave backups in place and say where they are; deleting them is the
+  owner's decision.
+
+### Report the release exe size
+
+After every release build, compare the new exe's size with the backup taken
+before the build. Report the old size, the new size, and the absolute and
+percent change, in bytes and MB, naming the commit each was built from when
+known. Compare like with like, and say when the two builds used different
+features (builds with MilkDrop are larger).
 
 ## Definition of done
 
