@@ -58,12 +58,19 @@ struct Inner {
 /// cover; a Lanczos resize to the drawn size, done once off the UI thread,
 /// costs a few KiB and keeps the cover as sharp as a browser would draw it,
 /// and the GPU then draws it one texel per pixel.
+///
+/// The textures belong to one window's context, but the loader outlives the
+/// window: switching to the mini player and back makes a new one, whose
+/// renderer has none of them, so they are let go with the window.
 #[derive(Default)]
 struct ScaledCovers {
     textures: HashMap<ScaledKey, (egui::TextureHandle, Instant)>,
     pending: HashSet<ScaledKey>,
     /// Sizes that cannot be made, or need not be: the art is no larger.
     skipped: HashSet<ScaledKey>,
+    /// Counts windows, so a resize begun for one that has gone is dropped
+    /// rather than handed to the next.
+    window: u64,
 }
 
 type ScaledKey = (String, [u32; 2]);
@@ -269,6 +276,7 @@ impl ArtLoader {
             return None;
         }
         scaled.pending.insert(key.clone());
+        let window = scaled.window;
         drop(scaled);
         let inner = Arc::clone(&self.inner);
         let ctx = ctx.clone();
@@ -276,6 +284,9 @@ impl ArtLoader {
             let texture = lanczos_cover(&image, size)
                 .map(|image| ctx.load_texture("scaled-cover", image, egui::TextureOptions::LINEAR));
             let mut scaled = inner.scaled.lock().unwrap_or_else(|p| p.into_inner());
+            if scaled.window != window {
+                return;
+            }
             scaled.pending.remove(&key);
             match texture {
                 Some(texture) => {
@@ -290,6 +301,15 @@ impl ArtLoader {
             ctx.request_repaint();
         });
         None
+    }
+
+    /// The window is gone (or about to be), and with it the resized covers'
+    /// textures. The next window resizes the covers it draws again.
+    pub fn forget_textures(&self) {
+        let mut scaled = self.inner.scaled.lock().unwrap_or_else(|p| p.into_inner());
+        scaled.textures.clear();
+        scaled.pending.clear();
+        scaled.window += 1;
     }
 
     pub fn clear_disk_cache(&self) -> std::io::Result<u64> {
@@ -567,6 +587,12 @@ pub struct LyricsBackdrop {
 const BACKDROP_RETRY: Duration = Duration::from_secs(3);
 
 impl LyricsBackdrop {
+    /// The window is gone (or about to be), and with it the texture; the
+    /// next window blurs the artwork again.
+    pub fn forget_texture(&mut self) {
+        *self = Self::default();
+    }
+
     /// The blurred backdrop for `uri`.
     ///
     /// The artwork is fetched here, from the disk cache or the network,
@@ -671,6 +697,12 @@ impl Default for SoftenedCovers {
 }
 
 impl SoftenedCovers {
+    /// The window is gone (or about to be), and with it the textures. Blurs
+    /// still on their way arrive as images and are uploaded to the next one.
+    pub fn forget_textures(&mut self) {
+        self.textures.clear();
+    }
+
     fn receive_ready(&mut self, ctx: &egui::Context) {
         while let Ok((ready_uri, image)) = self.ready_rx.try_recv() {
             self.pending.remove(&ready_uri);
@@ -1208,6 +1240,82 @@ mod tests {
         assert!(scaled.pending.is_empty());
         assert!(scaled.skipped.contains(&(uri.to_string(), [640, 640])));
         drop(scaled);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A window's textures mean nothing to the next window's renderer. After
+    /// a trip to the mini player, the main window's covers were drawn from
+    /// textures left by the window before, and vanished.
+    #[test]
+    fn a_new_window_resizes_its_covers_into_its_own_textures() {
+        let runtime = artwork_test_runtime();
+        let dir =
+            std::env::temp_dir().join(format!("spotifast-scaled-window-{}", std::process::id()));
+        let loader = artwork_test_loader(&runtime, dir.clone());
+        let uri = "https://i.scdn.co/image/scaled-window";
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_pixel(640, 640, image::Rgb([20, 30, 40]))
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        let bytes: Arc<[u8]> = encoded.into_inner().into();
+        loader.inner.entries.lock().unwrap().insert(
+            uri.into(),
+            Entry::Ready {
+                retained: bytes.len(),
+                bytes: Some(bytes),
+                last_used: Instant::now(),
+            },
+        );
+        let window = || {
+            let ctx = egui::Context::default();
+            egui_extras::install_image_loaders(&ctx);
+            ctx.add_bytes_loader(Arc::new(loader.clone()));
+            ctx
+        };
+        let resized = |ctx: &egui::Context| {
+            runtime.block_on(async {
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    loop {
+                        if let Some(texture) = loader.scaled(ctx, uri, [44, 44]) {
+                            break texture;
+                        }
+                        tokio::time::sleep(Duration::from_millis(1)).await;
+                    }
+                })
+                .await
+                .expect("a decoded cover is resized")
+            })
+        };
+
+        let main = window();
+        // Other textures come first in a real window, so its ids differ
+        // from the next window's.
+        let _icons: Vec<_> = (0..10)
+            .map(|_| {
+                main.load_texture(
+                    "icon",
+                    egui::ColorImage::filled([1, 1], egui::Color32::WHITE),
+                    Default::default(),
+                )
+            })
+            .collect();
+        let first = resized(&main);
+
+        loader.forget_textures();
+        drop(main);
+        let next = window();
+        let second = resized(&next);
+        assert_ne!(first.id(), second.id());
+        let meta = next
+            .tex_manager()
+            .read()
+            .meta(second.id())
+            .map(|meta| (meta.name.clone(), meta.size));
+        assert_eq!(
+            meta,
+            Some(("scaled-cover".to_owned(), [44, 44])),
+            "the cover is drawn from a texture the new window has"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 

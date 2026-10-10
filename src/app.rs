@@ -1031,7 +1031,7 @@ impl App {
         ctx.add_bytes_loader(std::sync::Arc::new(self.backend.art().clone()));
         ctx.set_theme(self.theme_preference());
         self.applied_dark = None;
-        self.winamp.forget_textures();
+        self.forget_textures();
         self.window_hidden = false;
         self.hide_intent = false;
         self.wants_show = false;
@@ -1117,10 +1117,21 @@ impl App {
     pub fn window_gone(&mut self) {
         // The Winamp window went with it; it comes back where it was.
         self.winamp.remember_position();
-        self.winamp.forget_textures();
+        self.forget_textures();
         self.window_hidden = true;
         self.hide_intent = false;
         self.wants_show = false;
+    }
+
+    /// Lets go of textures made for the window that is going. Each window
+    /// has its own context and renderer, so a texture kept from the last one
+    /// draws nothing in the next: covers vanished after a trip to the mini
+    /// player.
+    fn forget_textures(&mut self) {
+        self.winamp.forget_textures();
+        self.backend.art().forget_textures();
+        self.softened_covers.forget_textures();
+        self.lyrics_backdrop.forget_texture();
     }
 
     /// Whether closing the window keeps the app in the tray rather than
