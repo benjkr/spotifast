@@ -134,7 +134,13 @@ fn paint_cover_url(
     if let Some(art) = art {
         art.touch(url);
     }
-    let image = egui::Image::new(url).show_loading_spinner(false);
+    // On whole pixels, so a cover resized to the drawn size lands one texel
+    // per pixel; the mipmapped stand-in snaps too, so the swap never shifts.
+    let pixels_per_point = ui.ctx().pixels_per_point();
+    let rect = egui::emath::GuiRounding::round_to_pixels(rect, pixels_per_point);
+    let image = egui::Image::new(url)
+        .texture_options(crate::images::COVER_TEXTURE)
+        .show_loading_spinner(false);
     let Ok(egui::load::TexturePoll::Ready { texture }) = image.load_for_size(ui.ctx(), rect.size())
     else {
         return false;
@@ -146,9 +152,41 @@ fn paint_cover_url(
             texture.size.x.round() as usize,
             texture.size.y.round() as usize,
         );
+        if !shift_thumbnail
+            && let Some(size) = drawn_texels(texture.size, rect, pixels_per_point)
+            && let Some(scaled) = art.scaled(ui.ctx(), url, size)
+        {
+            let scaled = egui::load::SizedTexture::from_handle(&scaled);
+            paint_cover_texture(ui, scaled, rect, corner, false);
+            return true;
+        }
     }
     paint_cover_texture(ui, texture, rect, corner, shift_thumbnail);
     true
+}
+
+/// The size a cover's texture must be for the part of it `rect` shows to
+/// land one texel per physical pixel.
+fn drawn_texels(texture: egui::Vec2, rect: Rect, pixels_per_point: f32) -> Option<[u32; 2]> {
+    let uv = cover_uv(texture, rect);
+    let width = (rect.width() * pixels_per_point / uv.width()).round();
+    let height = (rect.height() * pixels_per_point / uv.height()).round();
+    (width >= 1.0 && height >= 1.0).then_some([width as u32, height as u32])
+}
+
+/// The centred part of a cover that fills `rect` without stretching.
+fn cover_uv(texture: egui::Vec2, rect: Rect) -> Rect {
+    let image_aspect = texture.x / texture.y;
+    let rect_aspect = rect.width() / rect.height();
+    if image_aspect > rect_aspect {
+        let visible_width = rect_aspect / image_aspect;
+        let inset = (1.0 - visible_width) / 2.0;
+        Rect::from_min_max(pos2(inset, 0.0), pos2(1.0 - inset, 1.0))
+    } else {
+        let visible_height = image_aspect / rect_aspect;
+        let inset = (1.0 - visible_height) / 2.0;
+        Rect::from_min_max(pos2(0.0, inset), pos2(1.0, 1.0 - inset))
+    }
 }
 
 fn paint_cover_texture(
@@ -158,17 +196,7 @@ fn paint_cover_texture(
     corner: CornerRadius,
     shift_thumbnail: bool,
 ) {
-    let image_aspect = texture.size.x / texture.size.y;
-    let rect_aspect = rect.width() / rect.height();
-    let mut uv = if image_aspect > rect_aspect {
-        let visible_width = rect_aspect / image_aspect;
-        let inset = (1.0 - visible_width) / 2.0;
-        Rect::from_min_max(pos2(inset, 0.0), pos2(1.0 - inset, 1.0))
-    } else {
-        let visible_height = image_aspect / rect_aspect;
-        let inset = (1.0 - visible_height) / 2.0;
-        Rect::from_min_max(pos2(0.0, inset), pos2(1.0, 1.0 - inset))
-    };
+    let mut uv = cover_uv(texture.size, rect);
     if shift_thumbnail {
         // Spotify's larger rendition lands about one thumbnail texel down
         // and right. Crop the preview's last row and column so it starts in
@@ -3146,6 +3174,51 @@ mod tests {
     use crate::model::{Action, Page};
     use crate::paths::AppDirs;
     use crate::settings::Settings;
+
+    /// A large cover drawn as a small thumbnail is averaged down through
+    /// mipmaps rather than sampled into jagged pixels.
+    #[test]
+    fn a_cover_drawn_small_is_mipmapped() {
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        let uri = "bytes://large-cover.png";
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_pixel(640, 640, image::Rgb([20, 30, 40]))
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        ctx.include_bytes(uri, encoded.into_inner());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let options = loop {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let rect = Rect::from_min_size(egui::Pos2::ZERO, vec2(44.0, 44.0));
+                paint_cover(
+                    ui,
+                    &Palette::dark(),
+                    Some(uri),
+                    rect,
+                    4.0,
+                    Icon::Music,
+                    None,
+                );
+            });
+            output.textures_delta.clear();
+            let painted = ctx
+                .tex_manager()
+                .read()
+                .allocated()
+                .find(|(_, meta)| meta.size == [640, 640])
+                .map(|(_, meta)| meta.options);
+            if let Some(options) = painted {
+                break options;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the cover never loaded"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
+        assert_eq!(options.mipmap_mode, Some(egui::TextureFilter::Linear));
+    }
 
     #[test]
     fn editing_a_proxy_endpoint_clears_its_password_but_password_entry_is_preserved() {

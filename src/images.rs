@@ -20,9 +20,17 @@ use crate::http::Http;
 const HELD_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ART_BYTES: usize = 8 * 1024 * 1024;
 
-/// Decoded ColorImage plus the GPU texture, both RGBA.
+/// How covers are sampled. Spotify often has nothing near a row's size, so a
+/// 300 or 640 pixel cover is drawn into a 44 point thumbnail; without mipmaps
+/// that skips most texels and the art comes out jagged.
+pub const COVER_TEXTURE: egui::TextureOptions =
+    egui::TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
+
+/// Decoded ColorImage plus the GPU texture, both RGBA, the texture with its
+/// mip chain (a third again).
 fn decoded_and_texture_bytes(width: usize, height: usize) -> usize {
-    2 * width.saturating_mul(height).saturating_mul(4)
+    let rgba = width.saturating_mul(height).saturating_mul(4);
+    rgba.saturating_add(rgba.saturating_mul(4) / 3)
 }
 
 /// What this loader answers for. egui offers it every URI, and artwork that
@@ -44,9 +52,61 @@ enum Entry {
 
 struct Inner {
     entries: Mutex<HashMap<String, Entry>>,
+    scaled: Mutex<ScaledCovers>,
     http: Http,
     runtime: tokio::runtime::Handle,
     cache_dir: PathBuf,
+}
+
+/// Covers resized to the exact pixels they are drawn at, by URL and size.
+///
+/// The GPU shrinks a large cover by averaging it down in halves (mipmaps),
+/// which comes out soft at thumbnail size. A Lanczos resize to the drawn
+/// size, done once off the UI thread, keeps the cover as sharp as a browser
+/// would draw it, and the GPU then draws it one texel per pixel.
+#[derive(Default)]
+struct ScaledCovers {
+    textures: HashMap<ScaledKey, (egui::TextureHandle, Instant)>,
+    pending: HashSet<ScaledKey>,
+    /// Sizes that cannot be made, or need not be: the art is no larger.
+    skipped: HashSet<ScaledKey>,
+}
+
+type ScaledKey = (String, [u32; 2]);
+
+/// Resizes running at once. Dragging a panel asks for a new size every
+/// frame; this keeps that from queueing a resize per frame per cover.
+const SCALING_AT_ONCE: usize = 8;
+
+/// Resized covers held. A sidebar row costs 8 KiB, a grid card a few
+/// hundred, so this keeps every cover on screen with room to scroll back.
+const HELD_SCALED_BYTES: usize = 32 * 1024 * 1024;
+
+impl ScaledCovers {
+    fn keep_within_budget(&mut self) {
+        let bytes = |texture: &egui::TextureHandle| {
+            let [width, height] = texture.size();
+            width * height * 4
+        };
+        let mut total: usize = self
+            .textures
+            .values()
+            .map(|(texture, _)| bytes(texture))
+            .sum();
+        while total > HELD_SCALED_BYTES {
+            let Some(oldest) = self
+                .textures
+                .iter()
+                .min_by_key(|(_, (_, last_used))| *last_used)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+            if let Some((texture, _)) = self.textures.remove(&oldest) {
+                total -= bytes(&texture);
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -60,6 +120,7 @@ impl ArtLoader {
         Self {
             inner: Arc::new(Inner {
                 entries: Mutex::new(HashMap::new()),
+                scaled: Mutex::default(),
                 http: http.into(),
                 runtime,
                 cache_dir,
@@ -180,6 +241,61 @@ impl ArtLoader {
             let jpeg = bytes.as_ref().map(|bytes| bytes.len()).unwrap_or(0);
             *retained = jpeg + decoded_and_texture_bytes(width, height);
         }
+    }
+
+    /// `url` resized to exactly `size` pixels, once egui has decoded it.
+    ///
+    /// The first call starts the resize in the background and answers
+    /// `None`; the caller draws the mipmapped texture until it is ready.
+    pub fn scaled(
+        &self,
+        ctx: &egui::Context,
+        url: &str,
+        size: [u32; 2],
+    ) -> Option<egui::TextureHandle> {
+        let key = (url.to_string(), size);
+        let mut scaled = self.inner.scaled.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((texture, last_used)) = scaled.textures.get_mut(&key) {
+            *last_used = Instant::now();
+            return Some(texture.clone());
+        }
+        if scaled.skipped.contains(&key)
+            || scaled.pending.contains(&key)
+            || scaled.pending.len() >= SCALING_AT_ONCE
+        {
+            return None;
+        }
+        // egui keeps the decoded cover after paint_cover_url releases its
+        // bytes, so this does not fetch or decode again.
+        let Ok(ImagePoll::Ready { image }) = ctx.try_load_image(url, Default::default()) else {
+            return None;
+        };
+        if size[0] as usize >= image.size[0] || size[1] as usize >= image.size[1] {
+            scaled.skipped.insert(key);
+            return None;
+        }
+        scaled.pending.insert(key.clone());
+        drop(scaled);
+        let inner = Arc::clone(&self.inner);
+        let ctx = ctx.clone();
+        self.inner.runtime.spawn_blocking(move || {
+            let texture = lanczos_cover(&image, size)
+                .map(|image| ctx.load_texture("scaled-cover", image, egui::TextureOptions::LINEAR));
+            let mut scaled = inner.scaled.lock().unwrap_or_else(|p| p.into_inner());
+            scaled.pending.remove(&key);
+            match texture {
+                Some(texture) => {
+                    scaled.textures.insert(key, (texture, Instant::now()));
+                    scaled.keep_within_budget();
+                }
+                None => {
+                    scaled.skipped.insert(key);
+                }
+            }
+            drop(scaled);
+            ctx.request_repaint();
+        });
+        None
     }
 
     pub fn clear_disk_cache(&self) -> std::io::Result<u64> {
@@ -632,7 +748,8 @@ impl SoftenedCovers {
     }
 }
 
-fn softened_background(image: &egui::ColorImage) -> Option<egui::ColorImage> {
+/// A decoded cover as the `image` crate's RGBA, if it is a sane size.
+fn rgba_image(image: &egui::ColorImage) -> Option<image::RgbaImage> {
     let [width, height] = image.size;
     if width > 8192 || height > 8192 || image.pixels.len() > 64 * 1024 * 1024 / 4 {
         return None;
@@ -642,8 +759,27 @@ fn softened_background(image: &egui::ColorImage) -> Option<egui::ColorImage> {
         .iter()
         .flat_map(egui::Color32::to_srgba_unmultiplied)
         .collect();
-    let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
-    Some(blurred_image(image.into(), COVER_BLUR))
+    image::RgbaImage::from_raw(width as u32, height as u32, pixels)
+}
+
+fn softened_background(image: &egui::ColorImage) -> Option<egui::ColorImage> {
+    Some(blurred_image(rgba_image(image)?.into(), COVER_BLUR))
+}
+
+fn lanczos_cover(image: &egui::ColorImage, [width, height]: [u32; 2]) -> Option<egui::ColorImage> {
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let scaled = image::imageops::resize(
+        &rgba_image(image)?,
+        width,
+        height,
+        image::imageops::FilterType::Lanczos3,
+    );
+    Some(egui::ColorImage::from_rgba_unmultiplied(
+        [width as usize, height as usize],
+        scaled.as_raw(),
+    ))
 }
 
 fn blurred_background(bytes: &[u8], sigma: f32) -> Option<egui::ColorImage> {
@@ -999,7 +1135,7 @@ mod tests {
         runtime.block_on(async {
             tokio::time::timeout(Duration::from_secs(10), async {
                 while !matches!(
-                    ctx.try_load_texture(uri, Default::default(), Default::default()),
+                    ctx.try_load_texture(uri, COVER_TEXTURE, Default::default()),
                     Ok(egui::load::TexturePoll::Ready { .. })
                 ) {
                     tokio::time::sleep(Duration::from_millis(1)).await;
@@ -1031,6 +1167,77 @@ mod tests {
             .expect("decoded artwork produces a softened cover");
         });
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A large cover drawn small is resized to the drawn pixels, and one
+    /// drawn at or above its own size is left to the GPU.
+    #[test]
+    fn a_cover_is_resized_to_the_pixels_it_is_drawn_at() {
+        let runtime = artwork_test_runtime();
+        let dir =
+            std::env::temp_dir().join(format!("spotifast-scaled-cover-{}", std::process::id()));
+        let loader = artwork_test_loader(&runtime, dir.clone());
+        let ctx = egui::Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        ctx.add_bytes_loader(Arc::new(loader.clone()));
+        let uri = "https://i.scdn.co/image/scaled";
+        let mut encoded = std::io::Cursor::new(Vec::new());
+        image::RgbImage::from_fn(640, 640, |x, y| {
+            image::Rgb(if (x + y) % 2 == 0 { [255; 3] } else { [0; 3] })
+        })
+        .write_to(&mut encoded, image::ImageFormat::Png)
+        .unwrap();
+        let bytes: Arc<[u8]> = encoded.into_inner().into();
+        loader.inner.entries.lock().unwrap().insert(
+            uri.into(),
+            Entry::Ready {
+                retained: bytes.len(),
+                bytes: Some(bytes),
+                last_used: Instant::now(),
+            },
+        );
+        runtime.block_on(async {
+            tokio::time::timeout(Duration::from_secs(10), async {
+                loop {
+                    if let Some(texture) = loader.scaled(&ctx, uri, [44, 44]) {
+                        assert_eq!(texture.size(), [44, 44]);
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .expect("a decoded cover is resized");
+        });
+        assert!(loader.scaled(&ctx, uri, [640, 640]).is_none());
+        let scaled = loader.inner.scaled.lock().unwrap();
+        assert!(scaled.pending.is_empty());
+        assert!(scaled.skipped.contains(&(uri.to_string(), [640, 640])));
+        drop(scaled);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_resized_cover_averages_detail_finer_than_a_pixel() {
+        // One-texel stripes shrunk 10x: point sampling would keep picking
+        // stripes; a proper resize settles on the grey they average to.
+        let stripes = egui::ColorImage::from_rgba_unmultiplied(
+            [440, 440],
+            &(0..440 * 440)
+                .flat_map(|i| {
+                    if i % 2 == 0 {
+                        [255, 255, 255, 255]
+                    } else {
+                        [0, 0, 0, 255]
+                    }
+                })
+                .collect::<Vec<u8>>(),
+        );
+        let scaled = lanczos_cover(&stripes, [44, 44]).unwrap();
+        assert_eq!(scaled.size, [44, 44]);
+        for pixel in &scaled.pixels {
+            assert!((100..=155).contains(&pixel.r()), "{pixel:?}");
+        }
     }
 
     #[test]
