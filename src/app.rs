@@ -1169,11 +1169,10 @@ impl App {
         theme::install(ctx);
         ctx.add_bytes_loader(std::sync::Arc::new(self.backend.art().clone()));
         ctx.add_image_loader(std::sync::Arc::new(self.backend.art().scaler()));
-        // The covers the last window's egui held are gone with it.
-        self.backend.art().forget_textures();
         ctx.set_theme(self.theme_preference());
         self.applied_dark = None;
-        self.winamp.forget_textures();
+        // The covers the last window's egui held are gone with it.
+        self.forget_textures();
         self.window_hidden = false;
         self.hide_intent = false;
         self.wants_show = false;
@@ -1222,12 +1221,23 @@ impl App {
     /// The window is gone but the process stays: audio, the tray, and the
     /// media controls keep running until Show or Quit.
     pub fn window_gone(&mut self) {
-        self.winamp.forget_textures();
+        self.forget_textures();
         self.window_hidden = true;
         self.hide_intent = false;
         self.wants_show = false;
         // Showing it again is coming back to it.
         self.window_focused = false;
+    }
+
+    /// Lets go of textures made for the window that is going. Each window
+    /// has its own context and renderer, so a texture kept from the last one
+    /// draws nothing in the next: covers vanished after a trip to the mini
+    /// player.
+    fn forget_textures(&mut self) {
+        self.winamp.forget_textures();
+        self.backend.art().forget_textures();
+        self.softened_covers.forget_textures();
+        self.lyrics_backdrop.forget_texture();
     }
 
     /// Whether closing the window keeps the app in the tray rather than

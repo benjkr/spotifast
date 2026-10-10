@@ -659,6 +659,12 @@ pub struct LyricsBackdrop {
 const BACKDROP_RETRY: Duration = Duration::from_secs(3);
 
 impl LyricsBackdrop {
+    /// The window is gone (or about to be), and with it the texture; the
+    /// next window blurs the artwork again.
+    pub fn forget_texture(&mut self) {
+        *self = Self::default();
+    }
+
     /// The blurred backdrop for `uri`.
     ///
     /// The artwork is fetched here, from the disk cache or the network,
@@ -764,6 +770,12 @@ impl Default for SoftenedCovers {
 }
 
 impl SoftenedCovers {
+    /// The window is gone (or about to be), and with it the textures. Blurs
+    /// still on their way arrive as images and are uploaded to the next one.
+    pub fn forget_textures(&mut self) {
+        self.textures.clear();
+    }
+
     fn receive_ready(&mut self, ctx: &egui::Context) {
         while let Ok((ready_uri, result)) = self.ready_rx.try_recv() {
             self.pending.remove(&ready_uri);
