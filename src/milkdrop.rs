@@ -74,6 +74,12 @@ pub fn screen_hz(millihertz: u32) -> Option<u32> {
     is_screen_rate(hz).then_some(hz)
 }
 
+/// Why MilkDrop's controls are grayed out in a build without it.
+#[cfg(not(feature = "milkdrop"))]
+pub fn not_built(locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+    crate::i18n::gettext(locale, "Not included in this build of Spotifast.")
+}
+
 /// The window's size when it first opens, in logical points.
 pub const DEFAULT_SIZE: [f32; 2] = [640.0, 480.0];
 /// The smallest the window may be dragged.

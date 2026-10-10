@@ -1899,6 +1899,10 @@ msgstr ""
 msgid "{rate} fps, your screen"
 msgstr ""
 
+#: src/milkdrop.rs:66
+msgid "Not included in this build of Spotifast."
+msgstr ""
+
 #: src/model.rs:701 src/model.rs:828
 msgctxt "filter"
 msgid "All"

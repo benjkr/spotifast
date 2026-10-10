@@ -1970,6 +1970,10 @@ msgstr "無制限"
 msgid "{rate} fps, your screen"
 msgstr "{rate} fps（画面に合わせる）"
 
+#: src/milkdrop.rs:66
+msgid "Not included in this build of Spotifast."
+msgstr "この Spotifast のビルドには含まれていません。"
+
 #: src/model.rs:701 src/model.rs:828
 msgctxt "filter"
 msgid "All"

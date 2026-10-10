@@ -1991,6 +1991,10 @@ msgstr "Bez limitu"
 msgid "{rate} fps, your screen"
 msgstr "{rate} kl./s, Twój ekran"
 
+#: src/milkdrop.rs:66
+msgid "Not included in this build of Spotifast."
+msgstr "Niedostępne w tej kompilacji Spotifast."
+
 #: src/model.rs:701 src/model.rs:828
 msgctxt "filter"
 msgid "All"

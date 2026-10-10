@@ -1909,6 +1909,10 @@ msgstr "不限制"
 msgid "{rate} fps, your screen"
 msgstr "{rate} fps，与屏幕一致"
 
+#: src/milkdrop.rs:66
+msgid "Not included in this build of Spotifast."
+msgstr "此版本的 Spotifast 不包含此功能。"
+
 #: src/model.rs:701 src/model.rs:828
 msgctxt "filter"
 msgid "All"

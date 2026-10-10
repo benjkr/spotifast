@@ -1679,6 +1679,60 @@ mod tests {
         app.backend.shutdown();
     }
 
+    /// A build without MilkDrop has no top bar button for it, and Settings
+    /// shows its switch grayed out, saying why, and turning nothing on.
+    #[cfg(not(feature = "milkdrop"))]
+    #[test]
+    fn milkdrop_is_grayed_out_when_it_is_not_built() {
+        let (ctx, mut app) = accessible_app("milkdrop-controls");
+        let names_milkdrop = |tree: &egui::accesskit::TreeUpdate| {
+            tree.nodes
+                .iter()
+                .any(|(_, node)| node.label().is_some_and(|label| label.contains("MilkDrop")))
+        };
+        accessible_frame(&ctx, &mut app, vec![]);
+        let tree = accessible_frame(&ctx, &mut app, vec![]);
+        assert!(!names_milkdrop(&tree), "top bar");
+        // Search Settings for it, so the section is on screen.
+        app.open(Page::Settings);
+        accessible_frame(&ctx, &mut app, vec![]);
+        let tree = accessible_frame(&ctx, &mut app, vec![]);
+        let field = accessible_node(&tree, "Search settings", egui::accesskit::Role::TextInput);
+        accessible_frame(
+            &ctx,
+            &mut app,
+            vec![accessible_action(
+                field,
+                egui::accesskit::Action::Focus,
+                None,
+            )],
+        );
+        let tree = accessible_frame(&ctx, &mut app, vec![egui::Event::Text("MilkDrop".into())]);
+        assert_eq!(settings_filter(&ctx), "MilkDrop");
+        let switch = accessible_node(&tree, "MilkDrop window", egui::accesskit::Role::CheckBox);
+        let node = tree
+            .nodes
+            .iter()
+            .find(|(id, _)| *id == switch)
+            .map(|(_, node)| node)
+            .unwrap();
+        assert!(node.is_disabled(), "the switch is grayed out");
+        accessible_frame(
+            &ctx,
+            &mut app,
+            vec![accessible_action(
+                switch,
+                egui::accesskit::Action::Click,
+                None,
+            )],
+        );
+        assert!(
+            !app.settings.milkdrop_open,
+            "a grayed switch turns nothing on"
+        );
+        app.backend.shutdown();
+    }
+
     #[test]
     fn translated_sidebar_keeps_keyboard_navigation_and_accessible_names() {
         use crate::i18n::{Locale, gettext};
