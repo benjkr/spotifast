@@ -1473,6 +1473,30 @@ msgstr "摺疊的音樂庫側邊欄"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "在側邊欄中只顯示封面。指標停在上面時，它會在頁面上方展開。"
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "摺疊側邊欄的關閉方式"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "指標離開後，摺疊的側邊欄多快關閉。"
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "立即"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "快"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "平滑"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "慢"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "展開側邊欄"

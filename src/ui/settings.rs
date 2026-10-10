@@ -879,6 +879,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let accent_from_art = gettext(locale, "Colour from album art");
     let sidebar_compact = gettext(locale, "Compact library sidebar");
     let sidebar_rail = gettext(locale, "Collapsed library sidebar");
+    let sidebar_rail_close = gettext(locale, "Collapsed sidebar closing");
     let tracklist_compact = gettext(locale, "Compact track list");
     let middle_click = gettext(locale, "Middle-click autoscroll");
     let custom_titlebar = gettext(locale, "Custom title bar");
@@ -978,6 +979,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 "Show only covers in the sidebar. It opens over the page while the pointer rests on it.",
+            ),
+        ),
+        RowText::new(
+            sidebar_rail_close.clone(),
+            gettext(
+                locale,
+                "How soon the collapsed sidebar closes after the pointer leaves it.",
             ),
         ),
     ];
@@ -1231,6 +1239,69 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     if widgets::switch(ui, &palette, &sidebar_rail, &mut app.settings.sidebar_rail)
                         .changed()
                     {
+                        changed = true;
+                    }
+                },
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[10],
+                |ui| {
+                    use crate::settings::RailClose;
+                    // The dial stops at the named speeds and passes through
+                    // nothing in between, like the MilkDrop frame rate.
+                    let labels: Vec<String> = RailClose::ALL
+                        .iter()
+                        .map(|stop| {
+                            match stop {
+                                RailClose::Instant => gettext(locale, "Instant"),
+                                RailClose::Fast => gettext(locale, "Fast"),
+                                RailClose::Smooth => gettext(locale, "Smooth"),
+                                RailClose::Slow => gettext(locale, "Slow"),
+                            }
+                            .into_owned()
+                        })
+                        .collect();
+                    let shown = labels.clone();
+                    let mut at = RailClose::ALL
+                        .iter()
+                        .position(|stop| *stop == app.settings.sidebar_rail_close)
+                        .unwrap_or(2);
+                    let moved = setting_slider(
+                        ui,
+                        &palette,
+                        &mut at,
+                        0..=RailClose::ALL.len() - 1,
+                        |slider| slider.step_by(1.0),
+                        // A drag moves one stop every twenty points.
+                        |value| {
+                            value
+                                .speed(0.05)
+                                .custom_formatter(move |value, _| {
+                                    shown
+                                        .get((value.round().max(0.0) as usize).min(shown.len() - 1))
+                                        .cloned()
+                                        .unwrap_or_default()
+                                })
+                                .custom_parser(move |text| {
+                                    // A name typed in lands on the stop it starts.
+                                    let text = text.trim().to_lowercase();
+                                    labels
+                                        .iter()
+                                        .position(|label| {
+                                            !text.is_empty()
+                                                && label.to_lowercase().starts_with(&text)
+                                        })
+                                        .map(|index| index as f64)
+                                })
+                        },
+                    )
+                    .changed();
+                    if moved && let Some(stop) = RailClose::ALL.get(at) {
+                        app.settings.sidebar_rail_close = *stop;
                         changed = true;
                     }
                 },

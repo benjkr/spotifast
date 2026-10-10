@@ -1519,6 +1519,30 @@ msgstr "Ingeklapte bibliotheekzijbalk"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Alleen covers tonen in de zijbalk. Hij opent boven de pagina zolang de aanwijzer erop rust."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Sluiten van de ingeklapte zijbalk"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Hoe snel de ingeklapte zijbalk sluit nadat de aanwijzer hem verlaat."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Direct"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Snel"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Soepel"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Langzaam"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Zijbalk uitklappen"

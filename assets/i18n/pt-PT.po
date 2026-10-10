@@ -1517,6 +1517,30 @@ msgstr "Barra lateral recolhida da biblioteca"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Mostra só as capas na barra lateral. Abre-se sobre a página enquanto o ponteiro estiver sobre ela."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Fecho da barra lateral recolhida"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Com que rapidez a barra lateral recolhida se fecha depois de o ponteiro a deixar."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Instantâneo"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Rápido"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Suave"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Lento"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Expandir barra lateral"

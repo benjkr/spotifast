@@ -89,6 +89,33 @@ impl PlayerBarVis {
     }
 }
 
+/// How soon the collapsed sidebar's card closes once the pointer leaves it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RailClose {
+    Instant,
+    Fast,
+    #[default]
+    Smooth,
+    Slow,
+}
+
+impl RailClose {
+    /// The stops of the settings dial, from quickest to slowest.
+    pub const ALL: [Self; 4] = [Self::Instant, Self::Fast, Self::Smooth, Self::Slow];
+
+    /// How long the card waits after the pointer leaves, so overshooting its
+    /// edge by a little does not snap it shut.
+    pub fn delay_secs(self) -> f64 {
+        match self {
+            Self::Instant => 0.0,
+            Self::Fast => 0.08,
+            Self::Smooth => 0.25,
+            Self::Slow => 0.6,
+        }
+    }
+}
+
 /// Mini-player visualizer mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -282,6 +309,8 @@ pub struct Settings {
     /// Fold the sidebar to a strip of covers that opens as a card over the
     /// page while the pointer rests on it.
     pub sidebar_rail: bool,
+    /// How soon that card closes once the pointer leaves it.
+    pub sidebar_rail_close: RailClose,
     pub sidebar_width: f32,
     pub lyrics_width: f32,
     pub queue_width: f32,
@@ -452,6 +481,7 @@ impl Default for Settings {
             sidebar_compact: false,
             sidebar_grid: false,
             sidebar_rail: false,
+            sidebar_rail_close: RailClose::Smooth,
             sidebar_width: 250.0,
             lyrics_width: 360.0,
             queue_width: 360.0,
@@ -1237,6 +1267,29 @@ mod tests {
         let json = serde_json::to_string(&settings).unwrap();
         let restored: Settings = serde_json::from_str(&json).unwrap();
         assert!(restored.sidebar_rail);
+    }
+
+    #[test]
+    fn sidebar_rail_close_defaults_to_smooth_and_round_trips() {
+        use super::RailClose;
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.sidebar_rail_close, RailClose::Smooth);
+        assert_eq!(RailClose::Smooth.delay_secs(), 0.25);
+
+        for stop in RailClose::ALL {
+            let settings = Settings {
+                sidebar_rail_close: stop,
+                ..Settings::default()
+            };
+            let json = serde_json::to_string(&settings).unwrap();
+            let restored: Settings = serde_json::from_str(&json).unwrap();
+            assert_eq!(restored.sidebar_rail_close, stop);
+        }
+        assert!(
+            RailClose::ALL
+                .windows(2)
+                .all(|pair| pair[0].delay_secs() < pair[1].delay_secs())
+        );
     }
 
     #[test]

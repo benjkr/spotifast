@@ -1524,6 +1524,30 @@ msgstr "Zwinięty pasek biblioteki"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Pokazuj tylko okładki na pasku bocznym. Otwiera się nad stroną, gdy wskaźnik na nim spoczywa."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Zamykanie zwiniętego paska"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Jak szybko zwinięty pasek zamyka się po opuszczeniu go przez wskaźnik."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Natychmiast"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Szybko"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Płynnie"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Wolno"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Rozwiń pasek boczny"

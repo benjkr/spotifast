@@ -1518,6 +1518,30 @@ msgstr "Barra lateral plegada"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Muestra solo las carátulas en la barra lateral. Se abre sobre la página mientras el puntero se detiene en ella."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Cierre de la barra lateral plegada"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Con qué rapidez se cierra la barra lateral plegada cuando el puntero la abandona."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Instantáneo"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Rápido"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Suave"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Lento"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Desplegar barra lateral"

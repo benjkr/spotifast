@@ -1469,6 +1469,30 @@ msgstr "折叠的音乐库侧边栏"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "在侧边栏中只显示封面。指针停在上面时，它会在页面上方展开。"
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "折叠侧边栏的关闭方式"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "指针离开后，折叠的侧边栏多快关闭。"
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "立即"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "快"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "平滑"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "慢"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "展开侧边栏"

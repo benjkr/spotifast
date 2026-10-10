@@ -588,9 +588,6 @@ const RAIL_CARD_RADIUS: f32 = 12.0;
 /// How long the pointer rests on the rail before the card opens, so passing
 /// over it on the way to the page's edge does not flash it open.
 const RAIL_OPEN_DELAY: f64 = 0.1;
-/// How long the card waits after the pointer leaves, so overshooting its
-/// edge by a little does not snap it shut.
-const RAIL_CLOSE_DELAY: f64 = 0.25;
 const RAIL_ANIMATION: f32 = 0.18;
 /// The page the open card always leaves visible beside it.
 const RAIL_PAGE_SLIVER: f32 = 48.0;
@@ -705,7 +702,8 @@ fn rail(app: &mut App, ui: &mut egui::Ui) {
         rail.min + Vec2::splat(RAIL_CARD_INSET),
         pos2(rail.left() + open_width, rail.bottom() - RAIL_CARD_INSET),
     );
-    let open = rail_open(&ctx, rail, open_card);
+    let close_delay = app.settings.sidebar_rail_close.delay_secs();
+    let open = rail_open(&ctx, rail, open_card, close_delay);
     // Demo captures have no pointer to rest on the rail.
     #[cfg(any(test, feature = "demo"))]
     let open = open || app.demo_rail_open;
@@ -840,7 +838,9 @@ fn background_menu(app: &mut App, response: &egui::Response) {
 /// has rested on the rail, at once for a song or playlist dragged onto it,
 /// and stays open while the pointer is over the card, one of its menus is
 /// open, its search has the keyboard, or one of its rows is being dragged.
-fn rail_open(ctx: &egui::Context, rail: Rect, open_card: Rect) -> bool {
+/// Once the pointer leaves it stays open for `close_delay` seconds, so
+/// overshooting its edge by a little does not snap it shut.
+fn rail_open(ctx: &egui::Context, rail: Rect, open_card: Rect, close_delay: f64) -> bool {
     let id = egui::Id::new(RAIL_HOVER_ID);
     let mut hover = ctx.data(|data| data.get_temp::<RailHover>(id).unwrap_or_default());
     let now = ctx.input(|input| input.time);
@@ -879,11 +879,11 @@ fn rail_open(ctx: &egui::Context, rail: Rect, open_card: Rect) -> bool {
         if hover.open {
             let left = *hover.left.get_or_insert(now);
             let waited = now - left;
-            if waited >= RAIL_CLOSE_DELAY {
+            if waited >= close_delay {
                 hover.open = false;
                 hover.left = None;
             } else {
-                ctx.request_repaint_after_secs((RAIL_CLOSE_DELAY - waited) as f32);
+                ctx.request_repaint_after_secs((close_delay - waited) as f32);
             }
         }
     }
