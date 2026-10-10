@@ -1466,6 +1466,30 @@ msgstr "Згорнута бічна панель бібліотеки"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Показувати на бічній панелі лише обкладинки. Вона розкривається над сторінкою, поки на ній вказівник."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Закриття згорнутої бічної панелі"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Як швидко згорнута бічна панель закривається, коли вказівник її залишає."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Миттєво"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Швидко"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Плавно"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Повільно"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Розгорнути бічну панель"

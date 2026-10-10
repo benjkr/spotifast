@@ -1463,6 +1463,30 @@ msgstr "Свёрнутая боковая панель медиатеки"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Только обложки в боковой панели. Она раскрывается поверх страницы, пока на ней находится указатель."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Закрытие свёрнутой боковой панели"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Как быстро свёрнутая боковая панель закрывается после того, как указатель её покинул."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Мгновенно"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Быстро"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Плавно"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Медленно"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Развернуть боковую панель"

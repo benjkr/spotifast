@@ -108,8 +108,6 @@ fn filtered_row_sized(
 /// rail keeps the theme's colours and rounding: egui carries that fill past
 /// the handle's centre by the widgets' corner radius, so a pill radius here
 /// would show the accent beyond the handle.
-/// Only MilkDrop's rows have sliders.
-#[cfg(any(feature = "milkdrop", test))]
 fn slider_rail_style(style: &mut egui::Style, palette: &Palette) {
     style.visuals.selection.bg_fill = palette.accent;
     style.visuals.slider_trailing_fill = true;
@@ -117,7 +115,6 @@ fn slider_rail_style(style: &mut egui::Style, palette: &Palette) {
 
 /// Shapes a settings slider's value box like the pill-shaped buttons in the
 /// other settings rows.
-#[cfg(any(feature = "milkdrop", test))]
 fn slider_value_style(style: &mut egui::Style, palette: &Palette) {
     style.visuals.widgets.inactive.bg_fill = palette.surface;
     style.visuals.widgets.hovered.bg_fill = palette.surface_hover;
@@ -140,7 +137,6 @@ fn slider_value_style(style: &mut egui::Style, palette: &Palette) {
 /// A settings slider with its value box beside it, where egui's own slider
 /// would put it. The two are drawn apart so each keeps its own rounding;
 /// `slider` and `value` set up each part for `number` over `range`.
-#[cfg(any(feature = "milkdrop", test))]
 fn setting_slider<N: egui::emath::Numeric>(
     ui: &mut egui::Ui,
     palette: &Palette,
@@ -808,6 +804,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let accent_from_art = gettext(locale, "Colour from album art");
     let sidebar_compact = gettext(locale, "Compact library sidebar");
     let sidebar_rail = gettext(locale, "Collapsed library sidebar");
+    let sidebar_rail_close = gettext(locale, "Collapsed sidebar closing");
     let tracklist_compact = gettext(locale, "Compact track list");
     let middle_click = gettext(locale, "Middle-click autoscroll");
     let custom_titlebar = gettext(locale, "Custom title bar");
@@ -895,6 +892,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             gettext(
                 locale,
                 "Show only covers in the sidebar. It opens over the page while the pointer rests on it.",
+            ),
+        ),
+        RowText::new(
+            sidebar_rail_close.clone(),
+            gettext(
+                locale,
+                "How soon the collapsed sidebar closes after the pointer leaves it.",
             ),
         ),
     ];
@@ -1110,6 +1114,69 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                     if widgets::switch(ui, &palette, &sidebar_rail, &mut app.settings.sidebar_rail)
                         .changed()
                     {
+                        changed = true;
+                    }
+                },
+            );
+            filtered_row(
+                ui,
+                &palette,
+                &needle,
+                &appearance,
+                &appearance_rows[10],
+                |ui| {
+                    use crate::settings::RailClose;
+                    // The dial stops at the named speeds and passes through
+                    // nothing in between, like the MilkDrop frame rate.
+                    let labels: Vec<String> = RailClose::ALL
+                        .iter()
+                        .map(|stop| {
+                            match stop {
+                                RailClose::Instant => gettext(locale, "Instant"),
+                                RailClose::Fast => gettext(locale, "Fast"),
+                                RailClose::Smooth => gettext(locale, "Smooth"),
+                                RailClose::Slow => gettext(locale, "Slow"),
+                            }
+                            .into_owned()
+                        })
+                        .collect();
+                    let shown = labels.clone();
+                    let mut at = RailClose::ALL
+                        .iter()
+                        .position(|stop| *stop == app.settings.sidebar_rail_close)
+                        .unwrap_or(2);
+                    let moved = setting_slider(
+                        ui,
+                        &palette,
+                        &mut at,
+                        0..=RailClose::ALL.len() - 1,
+                        |slider| slider.step_by(1.0),
+                        // A drag moves one stop every twenty points.
+                        |value| {
+                            value
+                                .speed(0.05)
+                                .custom_formatter(move |value, _| {
+                                    shown
+                                        .get((value.round().max(0.0) as usize).min(shown.len() - 1))
+                                        .cloned()
+                                        .unwrap_or_default()
+                                })
+                                .custom_parser(move |text| {
+                                    // A name typed in lands on the stop it starts.
+                                    let text = text.trim().to_lowercase();
+                                    labels
+                                        .iter()
+                                        .position(|label| {
+                                            !text.is_empty()
+                                                && label.to_lowercase().starts_with(&text)
+                                        })
+                                        .map(|index| index as f64)
+                                })
+                        },
+                    )
+                    .changed();
+                    if moved && let Some(stop) = RailClose::ALL.get(at) {
+                        app.settings.sidebar_rail_close = *stop;
                         changed = true;
                     }
                 },

@@ -1468,6 +1468,30 @@ msgstr "Daraltılmış kitaplık kenar çubuğu"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Kenar çubuğunda yalnızca kapakları gösterir. İşaretçi üzerinde durdukça sayfanın üzerinde açılır."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Daraltılmış kenar çubuğunun kapanması"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "İmleç ayrıldıktan sonra daraltılmış kenar çubuğunun ne kadar çabuk kapanacağı."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Anında"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Hızlı"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Yumuşak"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Yavaş"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Kenar çubuğunu genişlet"

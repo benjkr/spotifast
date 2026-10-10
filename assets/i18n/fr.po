@@ -1463,6 +1463,30 @@ msgstr "Barre latérale repliée"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Affiche seulement les pochettes dans la barre latérale. Elle s’ouvre par-dessus la page tant que le pointeur reste dessus."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Fermeture de la barre latérale repliée"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "La rapidité avec laquelle la barre latérale repliée se ferme quand le pointeur la quitte."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Immédiat"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Rapide"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Fluide"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Lent"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Déplier la barre latérale"

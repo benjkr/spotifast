@@ -1448,6 +1448,30 @@ msgstr "折りたたんだライブラリサイドバー"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "サイドバーにカバーだけを表示します。ポインタを置くと、ページの上に開きます。"
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "折りたたんだサイドバーの閉じ方"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "ポインターが離れてから、折りたたんだサイドバーが閉じるまでの速さ。"
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "即時"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "速い"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "なめらか"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "遅い"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "サイドバーを展開"

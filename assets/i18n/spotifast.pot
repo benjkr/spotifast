@@ -1422,6 +1422,30 @@ msgstr ""
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr ""
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr ""
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr ""
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr ""
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr ""
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr ""
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr ""
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr ""

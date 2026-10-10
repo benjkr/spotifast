@@ -1460,6 +1460,30 @@ msgstr "Barra laterale ripiegata"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Mostra solo le copertine nella barra laterale. Si apre sopra la pagina mentre il puntatore vi resta sopra."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Chiusura della barra laterale ripiegata"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Quanto in fretta si chiude la barra laterale ripiegata quando il puntatore la lascia."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Istantanea"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Veloce"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Fluida"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Lenta"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Espandi barra laterale"

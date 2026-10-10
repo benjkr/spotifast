@@ -240,6 +240,7 @@ main fields are:
 | `sidebar_compact` | `false` | Names only in the library sidebar, no covers |
 | `sidebar_grid` | `false` | Library entries as responsive cover cards instead of rows |
 | `sidebar_rail` | `false` | Collapse the sidebar to a strip of covers that opens as a card over the page, at `sidebar_width`, while the pointer rests on it. **Collapse sidebar** and **Expand sidebar** in the menu from right-clicking the sidebar's empty space switch it too. The strip always shows covers, so `sidebar_compact`, `sidebar_grid` and `art_expanded` apply only to the full sidebar |
+| `sidebar_rail_close` | `smooth` | How soon the collapsed sidebar's card closes after the pointer leaves it: `instant`, `fast`, `smooth` (0.25 s, the long-standing behaviour) or `slow`. **Settings → Appearance → Collapsed sidebar closing** sets it with a slider |
 | `tracklist_compact` | `false` | One-line track rows without covers |
 | `middle_click_autoscroll` | `false` | Linux only: middle-click a list to autoscroll it. Windows always autoscrolls and macOS never does |
 | `winamp_window` | `false` | The window is the Winamp mini player |

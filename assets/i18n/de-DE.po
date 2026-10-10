@@ -1465,6 +1465,30 @@ msgstr "Eingeklappte Bibliotheksleiste"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Nur Cover in der Seitenleiste anzeigen. Sie öffnet sich über der Seite, solange der Zeiger darauf ruht."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Schließen der eingeklappten Leiste"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Wie schnell sich die eingeklappte Leiste schließt, nachdem der Zeiger sie verlassen hat."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Sofort"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Schnell"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Flüssig"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Langsam"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Seitenleiste ausklappen"

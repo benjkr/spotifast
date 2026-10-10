@@ -1449,6 +1449,30 @@ msgstr "Hopfällt sidofält för biblioteket"
 msgid "Show only covers in the sidebar. It opens over the page while the pointer rests on it."
 msgstr "Visa bara omslag i sidofältet. Det öppnas över sidan medan pekaren vilar på det."
 
+#: src/ui/settings.rs:810
+msgid "Collapsed sidebar closing"
+msgstr "Stängning av hopfällt sidofält"
+
+#: src/ui/settings.rs:900
+msgid "How soon the collapsed sidebar closes after the pointer leaves it."
+msgstr "Hur snabbt det hopfällda sidofältet stängs när pekaren lämnar det."
+
+#: src/ui/settings.rs:1110
+msgid "Instant"
+msgstr "Direkt"
+
+#: src/ui/settings.rs:1110
+msgid "Fast"
+msgstr "Snabbt"
+
+#: src/ui/settings.rs:1110
+msgid "Smooth"
+msgstr "Mjukt"
+
+#: src/ui/settings.rs:1110
+msgid "Slow"
+msgstr "Långsamt"
+
 #: src/ui/sidebar.rs:820
 msgid "Expand sidebar"
 msgstr "Fäll ut sidofältet"
