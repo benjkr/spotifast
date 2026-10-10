@@ -466,7 +466,6 @@ fn edit_playlist(app: &mut App, ui: &mut egui::Ui) {
                 } else if let Some(url) = &existing_image {
                     ui.add(
                         egui::Image::new(url)
-                            .texture_options(crate::images::COVER_TEXTURE)
                             .fit_to_exact_size(egui::vec2(72.0, 72.0))
                             .alt_text(gettext(locale, "Current playlist cover")),
                     );

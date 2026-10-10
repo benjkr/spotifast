@@ -20,17 +20,9 @@ use crate::http::Http;
 const HELD_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ART_BYTES: usize = 8 * 1024 * 1024;
 
-/// How covers are sampled. Spotify often has nothing near a row's size, so a
-/// 300 or 640 pixel cover is drawn into a 44 point thumbnail; without mipmaps
-/// that skips most texels and the art comes out jagged.
-pub const COVER_TEXTURE: egui::TextureOptions =
-    egui::TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear));
-
-/// Decoded ColorImage plus the GPU texture, both RGBA, the texture with its
-/// mip chain (a third again).
+/// Decoded ColorImage plus the GPU texture, both RGBA.
 fn decoded_and_texture_bytes(width: usize, height: usize) -> usize {
-    let rgba = width.saturating_mul(height).saturating_mul(4);
-    rgba.saturating_add(rgba.saturating_mul(4) / 3)
+    2 * width.saturating_mul(height).saturating_mul(4)
 }
 
 /// What this loader answers for. egui offers it every URI, and artwork that
@@ -60,10 +52,12 @@ struct Inner {
 
 /// Covers resized to the exact pixels they are drawn at, by URL and size.
 ///
-/// The GPU shrinks a large cover by averaging it down in halves (mipmaps),
-/// which comes out soft at thumbnail size. A Lanczos resize to the drawn
-/// size, done once off the UI thread, keeps the cover as sharp as a browser
-/// would draw it, and the GPU then draws it one texel per pixel.
+/// Spotify often has nothing near a row's size, so a 300 or 640 pixel cover
+/// is drawn into a 44 point thumbnail, and sampling it skips most texels and
+/// comes out jagged. Mipmaps would cost a third again on every full-size
+/// cover; a Lanczos resize to the drawn size, done once off the UI thread,
+/// costs a few KiB and keeps the cover as sharp as a browser would draw it,
+/// and the GPU then draws it one texel per pixel.
 #[derive(Default)]
 struct ScaledCovers {
     textures: HashMap<ScaledKey, (egui::TextureHandle, Instant)>,
@@ -246,7 +240,7 @@ impl ArtLoader {
     /// `url` resized to exactly `size` pixels, once egui has decoded it.
     ///
     /// The first call starts the resize in the background and answers
-    /// `None`; the caller draws the mipmapped texture until it is ready.
+    /// `None`; the caller draws the full-size texture until it is ready.
     pub fn scaled(
         &self,
         ctx: &egui::Context,
@@ -1135,7 +1129,7 @@ mod tests {
         runtime.block_on(async {
             tokio::time::timeout(Duration::from_secs(10), async {
                 while !matches!(
-                    ctx.try_load_texture(uri, COVER_TEXTURE, Default::default()),
+                    ctx.try_load_texture(uri, Default::default(), Default::default()),
                     Ok(egui::load::TexturePoll::Ready { .. })
                 ) {
                     tokio::time::sleep(Duration::from_millis(1)).await;

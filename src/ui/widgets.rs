@@ -135,12 +135,10 @@ fn paint_cover_url(
         art.touch(url);
     }
     // On whole pixels, so a cover resized to the drawn size lands one texel
-    // per pixel; the mipmapped stand-in snaps too, so the swap never shifts.
+    // per pixel; the full-size stand-in snaps too, so the swap never shifts.
     let pixels_per_point = ui.ctx().pixels_per_point();
     let rect = egui::emath::GuiRounding::round_to_pixels(rect, pixels_per_point);
-    let image = egui::Image::new(url)
-        .texture_options(crate::images::COVER_TEXTURE)
-        .show_loading_spinner(false);
+    let image = egui::Image::new(url).show_loading_spinner(false);
     let Ok(egui::load::TexturePoll::Ready { texture }) = image.load_for_size(ui.ctx(), rect.size())
     else {
         return false;
@@ -3175,10 +3173,11 @@ mod tests {
     use crate::paths::AppDirs;
     use crate::settings::Settings;
 
-    /// A large cover drawn as a small thumbnail is averaged down through
-    /// mipmaps rather than sampled into jagged pixels.
+    /// A large cover drawn as a small thumbnail keeps a plain texture: the
+    /// resized copy makes it sharp, and a mip chain would cost a third again
+    /// on every full-size cover held.
     #[test]
-    fn a_cover_drawn_small_is_mipmapped() {
+    fn a_cover_drawn_small_is_not_mipmapped() {
         let ctx = egui::Context::default();
         egui_extras::install_image_loaders(&ctx);
         let uri = "bytes://large-cover.png";
@@ -3217,7 +3216,7 @@ mod tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(1));
         };
-        assert_eq!(options.mipmap_mode, Some(egui::TextureFilter::Linear));
+        assert_eq!(options.mipmap_mode, None);
     }
 
     #[test]
