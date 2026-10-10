@@ -481,6 +481,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 {
                     app.actions.push(Action::Open(Page::Settings));
                 }
+                #[cfg(feature = "milkdrop")]
                 if theme::icon_button(
                     ui,
                     Icon::AudioLines,

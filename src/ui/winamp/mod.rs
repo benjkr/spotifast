@@ -719,14 +719,19 @@ fn options_menu(app: &mut App, ui: &mut Ui, unit: f32) {
             app.actions.push(Action::SetWinampTaskbar(visible));
         }
     }
-    let mut milkdrop = app.settings.milkdrop_open;
-    if ui
-        .checkbox(&mut milkdrop, "MilkDrop")
-        .on_hover_text(super::keys::MILKDROP_SHORTCUT)
-        .clicked()
+    #[cfg(feature = "milkdrop")]
     {
-        app.actions.push(Action::ToggleWinampMilkdrop);
+        let mut milkdrop = app.settings.milkdrop_open;
+        if ui
+            .checkbox(&mut milkdrop, "MilkDrop")
+            .on_hover_text(super::keys::MILKDROP_SHORTCUT)
+            .clicked()
+        {
+            app.actions.push(Action::ToggleWinampMilkdrop);
+        }
     }
+    #[cfg(not(feature = "milkdrop"))]
+    milkdrop_unavailable(ui, locale);
     if ui
         .button(gettext(locale, "Choose a skin").as_ref())
         .clicked()
@@ -904,7 +909,7 @@ fn clutter_bar(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
         .lamp_button(
             layout::CLUTTER_V,
             sprites::CLUTTER_V_LIT,
-            app.settings.milkdrop_open,
+            cfg!(feature = "milkdrop") && app.settings.milkdrop_open,
             "clutter-v",
         )
         .on_hover_text(gettext(app.locale, "Visualisation").as_ref());
@@ -923,16 +928,31 @@ fn clutter_bar(app: &mut App, view: &mut View, now: Option<&NowPlaying>) {
                 app.actions.push(Action::SetVisualiser(mode));
             }
         }
-        ui.separator();
-        let mut milkdrop = app.settings.milkdrop_open;
-        if ui
-            .checkbox(&mut milkdrop, "MilkDrop")
-            .on_hover_text(super::keys::MILKDROP_SHORTCUT)
-            .clicked()
+        #[cfg(feature = "milkdrop")]
         {
-            app.actions.push(Action::ToggleWinampMilkdrop);
+            ui.separator();
+            let mut milkdrop = app.settings.milkdrop_open;
+            if ui
+                .checkbox(&mut milkdrop, "MilkDrop")
+                .on_hover_text(super::keys::MILKDROP_SHORTCUT)
+                .clicked()
+            {
+                app.actions.push(Action::ToggleWinampMilkdrop);
+            }
+        }
+        #[cfg(not(feature = "milkdrop"))]
+        {
+            ui.separator();
+            milkdrop_unavailable(ui, locale);
         }
     });
+}
+
+/// MilkDrop's menu entry, grayed out in a build without it.
+#[cfg(not(feature = "milkdrop"))]
+fn milkdrop_unavailable(ui: &mut Ui, locale: crate::i18n::Locale) {
+    ui.add_enabled(false, egui::Checkbox::new(&mut false, "MilkDrop"))
+        .on_disabled_hover_text(crate::milkdrop::not_built(locale).as_ref());
 }
 
 /// The display's left box: the spectrum analyser, the oscilloscope, or

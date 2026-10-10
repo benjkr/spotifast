@@ -15,6 +15,7 @@ pub(super) const fn platform_shortcut<'a>(ctrl: &'a str, cmd: &'a str) -> &'a st
 pub(super) const SIDEBAR_SHORTCUT: &str = platform_shortcut("Ctrl+B", "Cmd+B");
 pub(super) const QUIT_SHORTCUT: &str = platform_shortcut("Ctrl+Q", "Cmd+Q");
 pub(super) const WINAMP_SHORTCUT: &str = platform_shortcut("Ctrl+M", "Cmd+Shift+M");
+#[cfg(feature = "milkdrop")]
 pub(super) const MILKDROP_SHORTCUT: &str = platform_shortcut("Ctrl+Shift+K", "Cmd+Shift+K");
 
 pub fn handle(app: &mut App, ctx: &egui::Context) {
@@ -83,6 +84,7 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
             key(Modifiers::COMMAND, Key::M, Action::ToggleWinampWindow);
         }
         // Winamp's key for starting and stopping the visualisation plug-in.
+        #[cfg(feature = "milkdrop")]
         key(
             Modifiers::COMMAND | Modifiers::SHIFT,
             Key::K,
@@ -186,7 +188,7 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
 /// every description, are translated.
 pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> {
     let keys = |text: &'static str| Cow::Borrowed(text);
-    vec![
+    let mut list = vec![
         (
             pgettext(locale, "key", "Space"),
             gettext(locale, "Play or pause"),
@@ -266,6 +268,9 @@ pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> 
             gettext(locale, "Go to the playing album"),
         ),
         (keys(WINAMP_SHORTCUT), gettext(locale, "Winamp mini player")),
+    ];
+    #[cfg(feature = "milkdrop")]
+    list.extend([
         (
             keys(MILKDROP_SHORTCUT),
             gettext(locale, "MilkDrop, under the mini player"),
@@ -285,6 +290,8 @@ pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> 
             keys("Esc"),
             gettext(locale, "MilkDrop: leave full screen, or close"),
         ),
+    ]);
+    list.extend([
         (
             keys(platform_shortcut("Ctrl+,", "Cmd+,")),
             gettext(locale, "Settings"),
@@ -304,7 +311,8 @@ pub fn shortcuts(locale: Locale) -> Vec<(Cow<'static, str>, Cow<'static, str>)> 
             gettext(locale, "Close the window"),
         ),
         (keys(QUIT_SHORTCUT), gettext(locale, "Quit")),
-    ]
+    ]);
+    list
 }
 
 #[cfg(test)]
@@ -478,19 +486,29 @@ mod tests {
     #[test]
     fn shortcut_constants_name_the_platform_modifier() {
         let expected = if cfg!(target_os = "macos") {
-            ["Cmd+B", "Cmd+Q", "Cmd+Shift+M", "Cmd+Shift+K"]
+            ["Cmd+B", "Cmd+Q", "Cmd+Shift+M"]
         } else {
-            ["Ctrl+B", "Ctrl+Q", "Ctrl+M", "Ctrl+Shift+K"]
+            ["Ctrl+B", "Ctrl+Q", "Ctrl+M"]
         };
+        assert_eq!([SIDEBAR_SHORTCUT, QUIT_SHORTCUT, WINAMP_SHORTCUT], expected);
+        #[cfg(feature = "milkdrop")]
         assert_eq!(
-            [
-                SIDEBAR_SHORTCUT,
-                QUIT_SHORTCUT,
-                WINAMP_SHORTCUT,
-                MILKDROP_SHORTCUT,
-            ],
-            expected
+            MILKDROP_SHORTCUT,
+            if cfg!(target_os = "macos") {
+                "Cmd+Shift+K"
+            } else {
+                "Ctrl+Shift+K"
+            }
         );
+    }
+
+    /// A build without MilkDrop names none of its keys.
+    #[cfg(not(feature = "milkdrop"))]
+    #[test]
+    fn shortcut_dialog_omits_milkdrop_when_it_is_not_built() {
+        for (_, description) in shortcuts(Locale::English) {
+            assert!(!description.contains("MilkDrop"), "{description}");
+        }
     }
 
     #[test]

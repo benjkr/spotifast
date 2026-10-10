@@ -1922,6 +1922,10 @@ msgstr "Illimité"
 msgid "{rate} fps, your screen"
 msgstr "{rate} fps, votre écran"
 
+#: src/milkdrop.rs:66
+msgid "Not included in this build of Spotifast."
+msgstr "Non inclus dans cette version de Spotifast."
+
 #: src/model.rs:632 src/model.rs:748
 msgctxt "filter"
 msgid "All"
