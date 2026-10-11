@@ -4196,6 +4196,7 @@ impl App {
             page.tail_checked = false;
             page.cache_restored_through = None;
             page.pending_cache = None;
+            page.stale_through = None;
             page.cache_checked = true;
             page.cache_append_valid = false;
             page.local_additions.clear();
@@ -4249,6 +4250,7 @@ impl App {
                     playlist.cache_checked = true;
                     playlist.cache_restored_through = None;
                     playlist.pending_cache = None;
+                    playlist.stale_through = None;
                     playlist.cache_append_valid = false;
                     playlist.local_additions.clear();
                     playlist.optimistic_snapshot = None;
@@ -5498,6 +5500,7 @@ impl App {
                 let mut uris = Vec::new();
                 let mut adders: Vec<String> = Vec::new();
                 let mut tracks = Vec::new();
+                let mut stale_next = None;
                 let cache_key = Page::Playlist(id.clone());
                 if let Some(page) = self.playlist_pages.get_mut(&id) {
                     match result {
@@ -5533,6 +5536,14 @@ impl App {
                                 .filter(|id| !id.is_empty())
                                 .collect();
                             page.contributors.extend(adders.iter().cloned());
+                            let stale = page.stale_through.is_some();
+                            // Saved rows below this live page stay on show.
+                            let stale_tail = stale
+                                .then(|| offset as usize + items.items.len())
+                                .filter(|end| {
+                                    page.items.base_offset == 0 && *end < page.items.items.len()
+                                })
+                                .map(|end| page.items.items[end..].to_vec());
                             let extends_checkpoint = offset > 0
                                 && page.items.base_offset == 0
                                 && page.items.loaded_once
@@ -5542,7 +5553,8 @@ impl App {
                                 && page.items.total == Some(items.total)
                                 && page.items.items.len() <= offset as usize
                                 && page.items_generation == generation;
-                            let extends_cached_rows = offset > 0
+                            let extends_cached_rows = !stale
+                                && offset > 0
                                 && page.items.loaded_once
                                 && page.items.window_request.is_none()
                                 && page.items.windows.is_empty()
@@ -5564,6 +5576,23 @@ impl App {
                             }
                             page.items.absorb(offset, items);
                             page.items_generation = generation;
+                            if let Some(through) = page.stale_through {
+                                // Live pages are read one after another until
+                                // they cover every saved row that was shown.
+                                page.pending_cache = None;
+                                match page.items.next_offset.filter(|next| *next < through) {
+                                    Some(next) => {
+                                        if let Some(tail) = stale_tail {
+                                            page.items.items.extend(tail);
+                                            page.items.revision =
+                                                page.items.revision.wrapping_add(1);
+                                        }
+                                        page.items.loading = true;
+                                        stale_next = Some(next);
+                                    }
+                                    None => page.stale_through = None,
+                                }
+                            }
                             if extends_cached_rows
                                 && let Some(cache) = self.table_rows.get_mut(&cache_key)
                             {
@@ -5572,6 +5601,13 @@ impl App {
                         }
                         Err(error) => page.items.fail(friendly_page_error(self.locale, &error)),
                     }
+                }
+                if let Some(offset) = stale_next {
+                    self.backend.api(ApiRequest::PlaylistItems {
+                        id: id.clone(),
+                        offset,
+                        generation,
+                    });
                 }
                 for track in &tracks {
                     self.remember_track_recording(track);
@@ -6863,7 +6899,7 @@ impl App {
         let first = self
             .playlist_pages
             .get(id)
-            .filter(|page| page.items.base_offset == 0)
+            .filter(|page| page.items.base_offset == 0 && page.stale_through.is_none())
             .and_then(|page| {
                 page.items.items.iter().find_map(|row| {
                     let item = row.playable()?;
@@ -7120,7 +7156,9 @@ impl App {
         }
     }
 
-    /// Adopt a playlist's cached prefix once Spotify confirms its snapshot.
+    /// Show a playlist's saved prefix. Confirmed by Spotify's snapshot, it is
+    /// the page's prefix; otherwise it shows at once on an empty page until
+    /// the live pages replace it.
     fn try_adopt_playlist_cache(&mut self, id: &str) {
         let mut uris = Vec::new();
         let mut adders: Vec<String> = Vec::new();
@@ -7129,13 +7167,10 @@ impl App {
             if page.pending_writes > 0 {
                 return;
             }
-            let Some(snapshot_now) = page
+            let snapshot_now = page
                 .playlist
                 .get()
-                .and_then(|playlist| playlist.snapshot_id.clone())
-            else {
-                return;
-            };
+                .and_then(|playlist| playlist.snapshot_id.clone());
             let confirmed_total = page.playlist.get().and_then(|playlist| {
                 playlist
                     .items_count
@@ -7143,21 +7178,58 @@ impl App {
                     .or(playlist.tracks.as_ref())
                     .map(|count| count.total)
             });
-            match &page.pending_cache {
-                Some(cache)
-                    if cache.snapshot == snapshot_now
-                        && confirmed_total.is_none_or(|total| cache.total == total) => {}
-                Some(_) => {
-                    // A revision alone cannot validate an inconsistent cache.
-                    // Let the live item request establish the rows and order.
+            let Some(pending) = &page.pending_cache else {
+                return;
+            };
+            let confirmed = snapshot_now
+                .as_ref()
+                .is_some_and(|now| pending.snapshot == *now)
+                && confirmed_total.is_none_or(|total| pending.total == total);
+            // A revision alone cannot validate an inconsistent cache.
+            let refuted = snapshot_now.is_some() && !confirmed;
+            if page.stale_through.is_some() {
+                // Saved rows are on show. A match makes them the confirmed
+                // prefix; a mismatch leaves them to the live pages on their way.
+                if confirmed {
+                    let through = pending.next_offset.unwrap_or(pending.total);
+                    let total = pending.total;
+                    let appendable = pending.appendable;
                     page.pending_cache = None;
-                    return;
+                    page.stale_through = None;
+                    page.items.loading = false;
+                    page.cache_saved_through = Some(through);
+                    page.cache_saved_rows = page.items.items.len();
+                    page.cache_saved_total = Some(total);
+                    page.cache_append_valid = appendable;
+                    page.cache_restored_through = Some(through);
+                } else if refuted {
+                    page.pending_cache = None;
                 }
-                None => return,
+                return;
+            }
+            let blank = !page.items.loaded_once
+                && page.items.items.is_empty()
+                && page.items.base_offset == 0
+                && page.items.window_request.is_none();
+            if !confirmed && !blank {
+                // Live rows are already here, so unconfirmed ones add nothing.
+                if refuted {
+                    page.pending_cache = None;
+                }
+                return;
             }
             let Some(cache) = page.pending_cache.take() else {
                 return;
             };
+            // Kept without its rows, so Spotify's answer can still confirm
+            // the saved rows shown before it arrived.
+            let unconfirmed = (!confirmed && !refuted).then(|| PlaylistCache {
+                snapshot: cache.snapshot.clone(),
+                items: Vec::new(),
+                total: cache.total,
+                next_offset: cache.next_offset,
+                appendable: cache.appendable,
+            });
             let cached_through = cache.next_offset.unwrap_or(cache.total);
             let cached_rows = cache.items.len();
             let cached_total = cache.total;
@@ -7199,14 +7271,23 @@ impl App {
                 .filter(|id| !id.is_empty())
                 .collect();
             page.contributors.extend(adders.iter().cloned());
+            let first_page_on_its_way = page.items.loading;
             page.items
                 .adopt_cached_prefix(cache.items, cache.total, cache.next_offset);
             page.items_generation = page.generation;
-            page.cache_saved_through = Some(cached_through);
-            page.cache_saved_rows = cached_rows;
-            page.cache_saved_total = Some(cached_total);
-            page.cache_append_valid = cache_appendable;
-            page.cache_restored_through = Some(cached_through);
+            if confirmed {
+                page.cache_saved_through = Some(cached_through);
+                page.cache_saved_rows = cached_rows;
+                page.cache_saved_total = Some(cached_total);
+                page.cache_append_valid = cache_appendable;
+                page.cache_restored_through = Some(cached_through);
+            } else {
+                // Shown at once; the live first page replaces them.
+                page.items.loading = first_page_on_its_way;
+                page.stale_through = Some(cached_through);
+                page.cache_append_valid = false;
+                page.pending_cache = unconfirmed;
+            }
         }
         for track in &tracks {
             self.remember_track_recording(track);
@@ -7265,6 +7346,7 @@ impl App {
                 || page.items_generation != page.generation
                 || page.pending_writes > 0
                 || page.cache_write_pending.is_some()
+                || page.stale_through.is_some()
             {
                 return None;
             }
@@ -8197,6 +8279,7 @@ impl App {
         page.cache_append_valid = false;
         page.cache_restored_through = None;
         page.pending_cache = None;
+        page.stale_through = None;
     }
 
     fn request_playlist_add(
@@ -20666,8 +20749,11 @@ mod tests {
         );
     }
 
+    /// Saved rows from an old snapshot show at once, but only as a stand-in:
+    /// they are not the confirmed prefix, are not saved again, and do not
+    /// choose where Play starts.
     #[test]
-    fn a_partial_playlist_cache_from_an_old_snapshot_is_not_shown() {
+    fn a_playlist_cache_from_an_old_snapshot_shows_until_live_rows_arrive() {
         let mut app = headless_app();
         app.backend.set_offline(true);
         app.playlist_pages.insert(
@@ -20677,6 +20763,10 @@ mod tests {
                     snapshot_id: Some("new".into()),
                     ..Default::default()
                 }),
+                items: PagedList {
+                    loading: true,
+                    ..Default::default()
+                },
                 pending_cache: Some(PlaylistCache {
                     snapshot: "old".into(),
                     items: vec![cached_playlist_row("spotify:track:old")],
@@ -20692,10 +20782,160 @@ mod tests {
         app.try_adopt_playlist_cache("changed");
 
         let page = &app.playlist_pages["changed"];
-        assert!(page.items.items.is_empty());
-        assert!(page.pending_cache.is_none());
+        assert_eq!(page.items.items.len(), 1, "the saved rows show at once");
+        assert!(page.items.loading, "the live first page is still awaited");
+        assert_eq!(page.stale_through, Some(500));
+        assert!(
+            page.pending_cache.is_none(),
+            "an old snapshot never confirms"
+        );
         assert_eq!(page.cache_saved_through, None);
         assert_eq!(page.cache_restored_through, None);
+        assert_eq!(app.playlist_start("changed"), (None, Some(0)));
+    }
+
+    fn live_rows(
+        uris: &[&str],
+        offset: u32,
+        total: u32,
+    ) -> crate::api::models::Page<crate::api::models::PlaylistItem> {
+        crate::api::models::Page {
+            items: uris.iter().map(|uri| cached_playlist_row(uri)).collect(),
+            total,
+            limit: uris.len() as u32,
+            offset,
+            next: (offset + (uris.len() as u32) < total).then(|| "more".into()),
+        }
+    }
+
+    fn shown_rows(app: &App, id: &str) -> Vec<String> {
+        app.playlist_pages[id]
+            .items
+            .items
+            .iter()
+            .filter_map(|row| row.playable().map(|item| item.uri().to_string()))
+            .collect()
+    }
+
+    /// Before Spotify answers at all, saved rows show. Live pages replace
+    /// them from the top, and the saved rows below stay until reached.
+    #[test]
+    fn live_pages_replace_saved_rows_from_the_top() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.playlist_pages.insert(
+            "mix".into(),
+            PlaylistPage {
+                generation: 1,
+                items: PagedList {
+                    loading: true,
+                    ..Default::default()
+                },
+                pending_cache: Some(PlaylistCache {
+                    snapshot: "yesterday".into(),
+                    items: ["a", "b", "c", "d"]
+                        .iter()
+                        .map(|id| cached_playlist_row(&format!("spotify:track:{id}")))
+                        .collect(),
+                    total: 4,
+                    next_offset: None,
+                    appendable: true,
+                }),
+                cache_checked: true,
+                ..Default::default()
+            },
+        );
+        app.try_adopt_playlist_cache("mix");
+        assert_eq!(shown_rows(&app, "mix").len(), 4, "shown before any answer");
+
+        app.handle_api(ApiResponse::PlaylistItems {
+            id: "mix".into(),
+            offset: 0,
+            generation: 1,
+            result: Ok(live_rows(&["spotify:track:x", "spotify:track:y"], 0, 4)),
+        });
+        assert_eq!(
+            shown_rows(&app, "mix"),
+            [
+                "spotify:track:x",
+                "spotify:track:y",
+                "spotify:track:c",
+                "spotify:track:d"
+            ],
+            "the saved rows below the live page stay"
+        );
+        assert!(
+            app.playlist_pages["mix"].items.loading,
+            "the next page is read"
+        );
+        assert_eq!(app.playlist_start("mix"), (None, Some(0)));
+
+        app.handle_api(ApiResponse::PlaylistItems {
+            id: "mix".into(),
+            offset: 2,
+            generation: 1,
+            result: Ok(live_rows(&["spotify:track:z"], 2, 3)),
+        });
+        assert_eq!(
+            shown_rows(&app, "mix"),
+            ["spotify:track:x", "spotify:track:y", "spotify:track:z"]
+        );
+        let page = &app.playlist_pages["mix"];
+        assert_eq!(page.stale_through, None, "the live list is whole");
+        assert!(page.pending_cache.is_none());
+        assert_eq!(
+            app.playlist_start("mix"),
+            (Some("spotify:track:x".into()), None)
+        );
+    }
+
+    /// Saved rows shown before Spotify answered become the confirmed prefix
+    /// when its snapshot then matches, as if they had waited for it.
+    #[test]
+    fn saved_rows_shown_early_are_confirmed_by_a_matching_snapshot() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.playlist_pages.insert(
+            "same".into(),
+            PlaylistPage {
+                generation: 1,
+                items: PagedList {
+                    loading: true,
+                    ..Default::default()
+                },
+                pending_cache: Some(PlaylistCache {
+                    snapshot: "now".into(),
+                    items: vec![cached_playlist_row("spotify:track:kept")],
+                    total: 1,
+                    next_offset: None,
+                    appendable: true,
+                }),
+                cache_checked: true,
+                ..Default::default()
+            },
+        );
+        app.try_adopt_playlist_cache("same");
+        assert_eq!(app.playlist_pages["same"].stale_through, Some(1));
+
+        app.playlist_pages.get_mut("same").unwrap().playlist = Loadable::Loaded(Playlist {
+            snapshot_id: Some("now".into()),
+            ..Default::default()
+        });
+        app.try_adopt_playlist_cache("same");
+
+        let page = &app.playlist_pages["same"];
+        assert_eq!(page.stale_through, None);
+        assert_eq!(page.cache_restored_through, Some(1));
+        assert_eq!(page.cache_saved_through, Some(1));
+        assert!(
+            !page.items.loading,
+            "the first page in flight is not awaited"
+        );
+        assert_eq!(shown_rows(&app, "same"), ["spotify:track:kept"]);
+        assert_eq!(
+            app.playlist_start("same"),
+            (Some("spotify:track:kept".into()), None)
+        );
     }
 
     #[test]
