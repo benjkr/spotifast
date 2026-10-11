@@ -115,6 +115,7 @@ fn slider_rail_style(style: &mut egui::Style, palette: &Palette) {
 
 /// Shapes a settings slider's value box like the pill-shaped buttons in the
 /// other settings rows.
+#[cfg(any(feature = "milkdrop", test))]
 fn slider_value_style(style: &mut egui::Style, palette: &Palette) {
     style.visuals.widgets.inactive.bg_fill = palette.surface;
     style.visuals.widgets.hovered.bg_fill = palette.surface_hover;
@@ -137,6 +138,8 @@ fn slider_value_style(style: &mut egui::Style, palette: &Palette) {
 /// A settings slider with its value box beside it, where egui's own slider
 /// would put it. The two are drawn apart so each keeps its own rounding;
 /// `slider` and `value` set up each part for `number` over `range`.
+/// Only MilkDrop's rows have one.
+#[cfg(any(feature = "milkdrop", test))]
 fn setting_slider<N: egui::emath::Numeric>(
     ui: &mut egui::Ui,
     palette: &Palette,
@@ -161,6 +164,104 @@ fn setting_slider<N: egui::emath::Numeric>(
         moved | typed
     })
     .inner
+}
+
+/// The font of a stop slider's names; the chosen one is drawn in it too,
+/// so measuring with it leaves room for whichever name is chosen.
+fn stop_name_font() -> egui::FontId {
+    theme::medium(12.0)
+}
+
+/// How wide a stop slider over `names` is: wide enough that each name fits
+/// over its own stop, and never narrower than a usual settings slider.
+fn stop_slider_width(ui: &egui::Ui, names: &[String]) -> f32 {
+    let widest = names
+        .iter()
+        .map(|name| {
+            ui.painter()
+                .layout_no_wrap(name.clone(), stop_name_font(), egui::Color32::PLACEHOLDER)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    ((widest + 14.0) * names.len() as f32).max(240.0)
+}
+
+/// A settings slider that stops only at `names`, with each name written
+/// above the rail where the handle rests for it. The chosen name takes the
+/// accent, and clicking a name moves the handle there. Returns whether `at`
+/// changed.
+fn stop_slider(ui: &mut egui::Ui, palette: &Palette, at: &mut usize, names: &[String]) -> bool {
+    let Some(last) = names.len().checked_sub(1) else {
+        return false;
+    };
+    let font = stop_name_font();
+    let name_height = ui.ctx().fonts_mut(|fonts| fonts.row_height(&font));
+    // egui's own slider height, so its handle is the size it always is.
+    let rail_height = ui
+        .text_style_height(&egui::TextStyle::Body)
+        .max(ui.spacing().interact_size.y);
+    let width = stop_slider_width(ui, names);
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(width, name_height + 2.0 + rail_height),
+        egui::Sense::hover(),
+    );
+    let rail = egui::Rect::from_min_max(
+        egui::pos2(rect.left(), rect.bottom() - rail_height),
+        rect.max,
+    );
+    let mut changed = ui
+        .new_child(egui::UiBuilder::new().max_rect(rail))
+        .scope(|ui| {
+            slider_rail_style(ui.style_mut(), palette);
+            ui.spacing_mut().slider_width = width;
+            ui.add(
+                egui::Slider::new(at, 0..=last)
+                    .step_by(1.0)
+                    .show_value(false),
+            )
+        })
+        .inner
+        .changed();
+    // The handle's centre travels the rail less its radius at either end,
+    // as egui lays it out.
+    let travel = rail.x_range().shrink(rail_height / 2.5);
+    let mut placed = Vec::with_capacity(names.len());
+    for (index, name) in names.iter().enumerate() {
+        let galley =
+            ui.painter()
+                .layout_no_wrap(name.clone(), font.clone(), egui::Color32::PLACEHOLDER);
+        let stop = egui::emath::lerp(travel.min..=travel.max, index as f32 / last.max(1) as f32);
+        // Centred over its stop, but kept inside the control at the ends.
+        let left = (stop - galley.size().x / 2.0).clamp(
+            rect.left(),
+            (rect.right() - galley.size().x).max(rect.left()),
+        );
+        let name_rect = egui::Rect::from_min_size(egui::pos2(left, rect.top()), galley.size());
+        let response = ui
+            .interact(
+                name_rect,
+                ui.id().with(("stop-name", index)),
+                egui::Sense::click(),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if response.clicked() && *at != index {
+            *at = index;
+            changed = true;
+        }
+        placed.push((name_rect, galley, response.hovered()));
+    }
+    for (index, (name_rect, galley, hovered)) in placed.into_iter().enumerate() {
+        let color = if index == *at {
+            palette.accent
+        } else if hovered {
+            palette.text
+        } else {
+            palette.secondary
+        };
+        ui.painter().galley(name_rect.min, galley, color);
+    }
+    changed
 }
 
 /// Forget the search text, so a flow that lands on a specific row (like
@@ -1167,41 +1268,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             .into_owned()
                         })
                         .collect();
-                    let shown = labels.clone();
                     let mut at = RailClose::ALL
                         .iter()
                         .position(|stop| *stop == app.settings.sidebar_rail_close)
                         .unwrap_or(2);
-                    let moved = setting_slider(
-                        ui,
-                        &palette,
-                        &mut at,
-                        0..=RailClose::ALL.len() - 1,
-                        |slider| slider.step_by(1.0),
-                        // A drag moves one stop every twenty points.
-                        |value| {
-                            value
-                                .speed(0.05)
-                                .custom_formatter(move |value, _| {
-                                    shown
-                                        .get((value.round().max(0.0) as usize).min(shown.len() - 1))
-                                        .cloned()
-                                        .unwrap_or_default()
-                                })
-                                .custom_parser(move |text| {
-                                    // A name typed in lands on the stop it starts.
-                                    let text = text.trim().to_lowercase();
-                                    labels
-                                        .iter()
-                                        .position(|label| {
-                                            !text.is_empty()
-                                                && label.to_lowercase().starts_with(&text)
-                                        })
-                                        .map(|index| index as f64)
-                                })
-                        },
-                    )
-                    .changed();
+                    let moved = stop_slider(ui, &palette, &mut at, &labels);
                     if moved && let Some(stop) = RailClose::ALL.get(at) {
                         app.settings.sidebar_rail_close = *stop;
                         changed = true;
@@ -2344,5 +2415,70 @@ mod tests {
             assert!(response.rect.width() > ui.spacing().slider_width);
         });
         output.textures_delta.clear();
+    }
+
+    #[test]
+    fn a_stop_slider_writes_its_names_above_the_rail_and_jumps_to_a_clicked_one() {
+        let ctx = egui::Context::default();
+        let palette = crate::theme::Palette::dark();
+        crate::theme::install(&ctx);
+        crate::theme::apply(&ctx, &palette);
+        let names: Vec<String> = ["Instant", "Fast", "Smooth", "Slow"]
+            .map(String::from)
+            .to_vec();
+        let mut at = 2usize;
+        let frame = |input: egui::RawInput, at: &mut usize| {
+            let mut drawn = egui::Rect::NOTHING;
+            let mut rail_height = 0.0;
+            let mut output = ctx.run_ui(input, |ui| {
+                let before = ui.cursor().min;
+                super::stop_slider(ui, &palette, at, &names);
+                drawn = egui::Rect::from_min_max(before, ui.min_rect().max);
+                rail_height = ui.spacing().interact_size.y;
+            });
+            output.textures_delta.clear();
+            (output.shapes, drawn.bottom() - rail_height)
+        };
+        let (shapes, rail_top) = frame(Default::default(), &mut at);
+        // Each name is painted, and every one sits above the rail's handle.
+        let texts: Vec<egui::Rect> = shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.visual_bounding_rect()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts.len(), names.len());
+        assert!(texts.iter().all(|text| text.bottom() <= rail_top + 1.0));
+        // Ordered left to right like the stops.
+        assert!(
+            texts
+                .windows(2)
+                .all(|pair| pair[0].center().x < pair[1].center().x)
+        );
+
+        // A click on the first name chooses it.
+        let target = texts[0].center();
+        let click = |pressed| egui::Event::PointerButton {
+            pos: target,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        frame(
+            egui::RawInput {
+                events: vec![egui::Event::PointerMoved(target)],
+                ..Default::default()
+            },
+            &mut at,
+        );
+        frame(
+            egui::RawInput {
+                events: vec![click(true), click(false)],
+                ..Default::default()
+            },
+            &mut at,
+        );
+        assert_eq!(at, 0);
     }
 }
