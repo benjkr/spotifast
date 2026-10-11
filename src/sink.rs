@@ -8,7 +8,9 @@
 //!
 //! fastframe-audio owns the device stream: it pauses with playback, so a
 //! paused player costs no audio work (#636), follows the system's default
-//! output and reopens after a failure. rodio's mixer and queue fill it.
+//! output and reopens after a failure. On Windows the sink opens the default
+//! output by name and follows it itself (see `default_output`). rodio's mixer
+//! and queue fill it.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering, fence};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
@@ -513,11 +515,26 @@ struct Output {
     /// Whether this track has supplied audio since its last stop.
     fed: bool,
     last_write: Option<Instant>,
+    /// The default output this stream opened by name, when Settings names
+    /// none (see `default_output`).
+    #[cfg(windows)]
+    default: Option<default_output::Watch>,
 }
 
 impl Output {
     fn failed(&self) -> bool {
         self.device.failed()
+    }
+
+    /// Whether the sink has to open the output again itself: a stream that
+    /// opened the Windows default by name does not follow it, so it is
+    /// opened again when it fails or the default moves.
+    fn stale(&self) -> bool {
+        #[cfg(windows)]
+        if let Some(watch) = &self.default {
+            return self.failed() || watch.moved();
+        }
+        false
     }
 
     /// Plays from `mixer`, made for the format the device now runs at, with
@@ -693,6 +710,10 @@ impl RodioSink {
 
     /// Opens the output if it is not open, and has it ask for sound.
     fn open_if_needed(&mut self) -> Result<(), OpenError> {
+        if self.output.as_ref().is_some_and(Output::stale) {
+            log::info!("the default audio output moved or failed; opening it again");
+            self.output = None;
+        }
         match &mut self.output {
             Some(output) => {
                 if output.run(&self.control)? {
@@ -844,7 +865,12 @@ impl Sink for RodioSink {
         let refill = u64::from(output.sample_rate) * REFILL.as_millis() as u64 / 1_000;
         let mut stall = Stall::new(output.queued.consumed(), Instant::now());
         let mut stalled = false;
+        let mut stale = false;
         while output.sink.len() > QUEUE_LIMIT {
+            if output.stale() {
+                stale = true;
+                break;
+            }
             if output.failed() {
                 // Headphones that connect, a new default output or a device
                 // that went away: move to the output to use now and carry on
@@ -876,6 +902,8 @@ impl Sink for RodioSink {
             // and then nothing would ever make room. Start it over.
             log::warn!("the audio output stopped playing for {STALL:?}; opening it again");
             self.output = None;
+            self.ensure_open()?;
+        } else if stale {
             self.ensure_open()?;
         }
         self.apply_volume();
@@ -956,6 +984,13 @@ fn open_output(
         format: (0, 0),
         made: Arc::clone(&made),
     };
+    #[cfg(windows)]
+    let default = match preferred.map(str::trim).filter(|name| !name.is_empty()) {
+        Some(_) => None,
+        None => default_output::name(),
+    };
+    #[cfg(windows)]
+    let preferred = default.as_deref().or(preferred);
     let device = fastframe_audio::Output::open(output_options(preferred, buffer_ms), render)?;
     log::info!("audio output: {}", device.device_name());
     // The open configured the renderer, which made the mixer.
@@ -977,15 +1012,96 @@ fn open_output(
         queued: Queued::new(),
         fed: false,
         last_write: None,
+        #[cfg(windows)]
+        default: default.map(default_output::Watch::start),
     };
     output.attach((mixer, sample_rate), control);
     Ok(output)
+}
+
+/// The Windows default output, opened by its name.
+///
+/// cpal follows the default output through a device notification callback
+/// that initialises COM on the system thread delivering it. After the user
+/// switches outputs, opening the default can then fail with "Cannot change
+/// thread mode after it is set" until Spotifast restarts. A stream opened on
+/// a named device registers no such callback and activates the device
+/// directly, so the default is opened by name and this watch, like
+/// fastframe-audio's own, moves the sink to a new default.
+#[cfg(windows)]
+mod default_output {
+    use std::sync::{Arc, Mutex, PoisonError};
+    use std::time::Duration;
+
+    use cpal::traits::HostTrait;
+
+    /// How often the default output is asked for, as fastframe-audio does.
+    const CHECK_INTERVAL: Duration = Duration::from_secs(2);
+
+    /// The default output's name, as fastframe-audio matches it.
+    pub fn name() -> Option<String> {
+        cpal::default_host()
+            .default_output_device()
+            .map(|device| device.to_string())
+    }
+
+    /// The default output a stream opened on, and the one there is now,
+    /// polled on a thread of its own because asking can block. The thread
+    /// ends with the watch.
+    pub struct Watch {
+        opened: String,
+        now: Arc<Mutex<Option<String>>>,
+    }
+
+    impl Watch {
+        pub fn start(opened: String) -> Self {
+            let now = Arc::new(Mutex::new(None));
+            let weak = Arc::downgrade(&now);
+            let started = std::thread::Builder::new()
+                .name("audio-default-name".into())
+                .spawn(move || {
+                    loop {
+                        std::thread::sleep(CHECK_INTERVAL);
+                        let Some(now) = weak.upgrade() else {
+                            break;
+                        };
+                        let name = name();
+                        *now.lock().unwrap_or_else(PoisonError::into_inner) = name;
+                    }
+                });
+            if let Err(error) = started {
+                log::warn!("cannot watch the default audio output: {error}");
+            }
+            Self { opened, now }
+        }
+
+        /// Whether another output is the default now.
+        pub fn moved(&self) -> bool {
+            let now = self.now.lock().unwrap_or_else(PoisonError::into_inner);
+            super::default_moved(&self.opened, now.as_deref())
+        }
+    }
+}
+
+/// Whether the default output is another than `opened`. A moment with no
+/// default, or before the first poll, is not a move.
+#[cfg(windows)]
+fn default_moved(opened: &str, now: Option<&str>) -> bool {
+    now.is_some_and(|now| now != opened)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Mutex;
+
+    #[cfg(windows)]
+    #[test]
+    fn only_another_default_output_moves_the_stream() {
+        assert!(!default_moved("Speakers", None));
+        assert!(!default_moved("Speakers", Some("Speakers")));
+        assert!(default_moved("Speakers", Some("Headphones")));
+    }
 
     #[test]
     fn volume_changes_take_thirty_ms_at_each_output_rate() {
