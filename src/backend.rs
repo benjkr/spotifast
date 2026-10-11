@@ -710,6 +710,9 @@ pub enum Command {
         generation: u64,
     },
     StoreLikedSongsCache(crate::liked::Cache),
+    /// Read the signed-in account's own lists saved by an earlier run.
+    LoadLibraryCache,
+    StoreLibraryCache(crate::library_cache::Cache),
     /// Resolve the precise type of Web API singles through the streaming session.
     AlbumTypes(Vec<String>),
     /// Ask the streaming session which saved shows are audiobooks.
@@ -847,6 +850,10 @@ pub enum Event {
         account_id: String,
         generation: u64,
         cache: Option<crate::liked::Cache>,
+    },
+    LibraryCache {
+        account_id: String,
+        cache: Option<crate::library_cache::Cache>,
     },
 }
 
@@ -1970,6 +1977,31 @@ impl Worker {
                         let path = self.dirs.liked_songs_cache_file(&cache.account_id);
                         if let Err(error) = crate::liked::write(&path, &cache).await {
                             log::warn!("unable to store Liked Songs cache: {error}");
+                        }
+                    }
+                }
+                Command::LoadLibraryCache => {
+                    if let Some(account) = self.api.account() {
+                        let account_id = account.as_str().to_string();
+                        let path = self.dirs.library_cache_file(&account_id);
+                        let events = self.events.clone();
+                        let waker = self.waker.clone();
+                        tokio::spawn(async move {
+                            let cache = crate::library_cache::read(&path, &account_id).await;
+                            let _ = events.send(Event::LibraryCache { account_id, cache });
+                            waker.wake();
+                        });
+                    }
+                }
+                Command::StoreLibraryCache(cache) => {
+                    if self
+                        .api
+                        .account()
+                        .is_some_and(|account| account.as_str() == cache.account_id)
+                    {
+                        let path = self.dirs.library_cache_file(&cache.account_id);
+                        if let Err(error) = crate::library_cache::write(&path, &cache).await {
+                            log::warn!("unable to store the library cache: {error}");
                         }
                     }
                 }
