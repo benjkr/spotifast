@@ -691,6 +691,10 @@ pub struct PlaylistPage {
     pub cache_restored_through: Option<u32>,
     /// Items read from disk, waiting for the live snapshot to confirm.
     pub pending_cache: Option<PlaylistCache>,
+    /// End of the saved rows shown before Spotify confirmed them. Live pages
+    /// replace them from the top; until then they neither choose where Play
+    /// starts nor are saved again.
+    pub stale_through: Option<u32>,
     /// Songs added here that may sit beyond the loaded prefix. They are known
     /// members immediately, even before Spotify's next read catches up.
     pub local_additions: std::collections::BTreeSet<String>,
