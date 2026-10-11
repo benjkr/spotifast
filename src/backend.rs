@@ -147,6 +147,12 @@ pub enum ApiRequest {
         id: String,
         generation: u64,
     },
+    /// A playlist the account's folder tree lists but the Web API's list
+    /// left out, such as Spotify's On Repeat, read for the library list.
+    LibraryPlaylist {
+        id: String,
+        generation: u64,
+    },
     PlaylistItems {
         id: String,
         offset: u32,
@@ -328,6 +334,7 @@ impl ApiRequest {
                 | Self::Recommendations { .. }
                 | Self::Discover { .. }
                 | Self::MyPlaylists { .. }
+                | Self::LibraryPlaylist { .. }
                 | Self::PlaylistSample { .. }
                 | Self::Contains { .. }
         )
@@ -375,6 +382,11 @@ pub enum ApiResponse {
         offset: u32,
         generation: u64,
         result: ApiResult<Page<Playlist>>,
+    },
+    LibraryPlaylist {
+        id: String,
+        generation: u64,
+        result: ApiResult<Playlist>,
     },
     Playlist {
         id: String,
@@ -3393,7 +3405,9 @@ fn operation_for(api: &ApiGateway, request: &ApiRequest) -> Operation {
         }
         ApiRequest::SearchCatalogue { .. } => Operation::CatalogSearch,
         ApiRequest::Search { .. } => Operation::PlaylistSearch,
-        ApiRequest::Playlist { id, .. } => Operation::PlaylistMetadata(api.playlist_access(id)),
+        ApiRequest::Playlist { id, .. } | ApiRequest::LibraryPlaylist { id, .. } => {
+            Operation::PlaylistMetadata(api.playlist_access(id))
+        }
         ApiRequest::PlaylistItems { id, .. }
         | ApiRequest::PlaylistSample { id, .. }
         | ApiRequest::CheckPlaylistDuplicates {
@@ -3435,6 +3449,10 @@ fn observe_playlists(api: &ApiGateway, response: &ApiResponse) {
             result: Ok(page), ..
         } => api.observe_playlists(&page.items),
         ApiResponse::Playlist {
+            result: Ok(playlist),
+            ..
+        }
+        | ApiResponse::LibraryPlaylist {
             result: Ok(playlist),
             ..
         }
@@ -3577,6 +3595,11 @@ async fn handle(
             result: routed!(my_playlists(offset, 50)),
         },
         ApiRequest::Playlist { id, generation } => ApiResponse::Playlist {
+            result: routed!(playlist(&id)),
+            id,
+            generation,
+        },
+        ApiRequest::LibraryPlaylist { id, generation } => ApiResponse::LibraryPlaylist {
             result: routed!(playlist(&id)),
             id,
             generation,
@@ -3954,7 +3977,9 @@ enum SessionRead<'a> {
 
 fn session_read(request: &ApiRequest) -> Option<SessionRead<'_>> {
     Some(match request {
-        ApiRequest::Playlist { id, .. } => SessionRead::Header { id },
+        ApiRequest::Playlist { id, .. } | ApiRequest::LibraryPlaylist { id, .. } => {
+            SessionRead::Header { id }
+        }
         ApiRequest::PlaylistItems { id, offset, .. } => SessionRead::Rows {
             id,
             offset: *offset,
@@ -3979,6 +4004,13 @@ fn session_response(request: &ApiRequest, answer: SessionAnswer) -> Option<ApiRe
     Some(match (request, answer) {
         (ApiRequest::Playlist { id, generation }, SessionAnswer::Header(result)) => {
             ApiResponse::Playlist {
+                id: id.clone(),
+                generation: *generation,
+                result,
+            }
+        }
+        (ApiRequest::LibraryPlaylist { id, generation }, SessionAnswer::Header(result)) => {
+            ApiResponse::LibraryPlaylist {
                 id: id.clone(),
                 generation: *generation,
                 result,

@@ -151,7 +151,10 @@ JSON file per account: the playlists in its library, and Home's recently
 played, top artists and top songs. They show as soon as the account is known
 at start, and the live lists replace them in the background. The playlist list
 is replaced only once every page has arrived, and a failed read keeps the
-saved list. Recommendations and Spotify's mixes are never saved. This cache
+saved list. Playlists in the account's folder tree that the Web API's list
+leaves out, such as Spotify's On Repeat, are read over the playback session
+and saved with the rest, and drop out once the tree no longer lists them.
+Recommendations and Spotify's mixes on Home are never saved. This cache
 can be deleted without signing out; a missing or unreadable file is ignored.
 
 The last good playlist folder tree is kept in `session.json`, scoped to the
