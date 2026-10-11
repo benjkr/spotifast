@@ -1994,6 +1994,7 @@ impl App {
                             });
                             self.session_dirty = true;
                         }
+                        self.sync_session_playlists();
                     }
                     Err(error) => log::warn!("rootlist unavailable: {error}"),
                 },
@@ -5315,10 +5316,16 @@ impl App {
                             staged.extend(page.items);
                         }
                         if next_offset.is_none() {
-                            let live = self.library.playlists_staged.take().unwrap_or_default();
+                            let mut live = self.library.playlists_staged.take().unwrap_or_default();
+                            let previous = self.library.playlists.get().map(Vec::as_slice);
+                            self.library.playlists_extra =
+                                carry_session_playlists(&mut live, previous, &self.rootlist);
                             self.library.playlists = Loadable::Loaded(live);
                         }
                     } else {
+                        if offset == 0 {
+                            self.library.playlists_extra.clear();
+                        }
                         match &mut self.library.playlists {
                             Loadable::Loaded(existing) if offset > 0 => existing.extend(page.items),
                             slot => *slot = Loadable::Loaded(page.items),
@@ -5369,6 +5376,11 @@ impl App {
                     }
                 }
             },
+            ApiResponse::LibraryPlaylist {
+                id,
+                generation,
+                result,
+            } => self.receive_session_playlist(&id, generation, result),
             ApiResponse::Playlist {
                 id,
                 generation,
@@ -10402,6 +10414,88 @@ impl App {
         }
     }
 
+    /// Matches the session-read playlists to the folder tree once the live
+    /// list is whole: drops any the tree no longer lists, and reads every
+    /// playlist the tree lists that the Web API's list left out.
+    fn sync_session_playlists(&mut self) {
+        if self.library.playlists_staged.is_some() || self.library.playlists_next.is_some() {
+            return;
+        }
+        let tree = rootlist_playlists(&self.rootlist);
+        let Some(playlists) = self.library.playlists.get_mut() else {
+            return;
+        };
+        let extra = &mut self.library.playlists_extra;
+        let before = playlists.len();
+        playlists.retain(|playlist| !extra.contains(&playlist.uri) || tree.contains(&playlist.uri));
+        extra.retain(|uri| tree.contains(uri));
+        let dropped = playlists.len() != before;
+        let listed: std::collections::HashSet<&str> = playlists
+            .iter()
+            .filter(|playlist| !extra.contains(&playlist.uri))
+            .map(|playlist| playlist.uri.as_str())
+            .collect();
+        let unread: Vec<String> = tree
+            .iter()
+            .filter(|uri| !listed.contains(uri.as_str()))
+            .filter_map(|uri| uri.strip_prefix("spotify:playlist:"))
+            .map(str::to_owned)
+            .collect();
+        if dropped {
+            let playlists = playlists.clone();
+            self.remember_library(|cache| {
+                crate::library_cache::replace(&mut cache.playlists, &playlists)
+            });
+        }
+        let generation = self.library.playlists_generation;
+        for id in unread {
+            self.backend
+                .api(ApiRequest::LibraryPlaylist { id, generation });
+        }
+    }
+
+    /// Adds or refreshes a playlist the session read for the library list.
+    fn receive_session_playlist(
+        &mut self,
+        id: &str,
+        generation: u64,
+        result: Result<Playlist, crate::api::ApiError>,
+    ) {
+        if generation != self.library.playlists_generation
+            || self.library.playlists_staged.is_some()
+            || self.library.playlists_next.is_some()
+        {
+            return;
+        }
+        let mut playlist = match result {
+            Ok(playlist) => playlist,
+            Err(error) => {
+                log::warn!("library playlist {id} unavailable: {error}");
+                return;
+            }
+        };
+        let uri = format!("spotify:playlist:{id}");
+        if !rootlist_playlists(&self.rootlist).contains(&uri) {
+            return;
+        }
+        playlist.uri.clone_from(&uri);
+        let Some(playlists) = self.library.playlists.get_mut() else {
+            return;
+        };
+        match playlists.iter_mut().find(|listed| listed.uri == uri) {
+            // The Web API's own entry is never replaced by the session's.
+            Some(_) if !self.library.playlists_extra.contains(&uri) => return,
+            Some(listed) => *listed = playlist,
+            None => playlists.push(playlist),
+        }
+        self.library.playlists_extra.insert(uri.clone());
+        self.saved.insert(uri, true);
+        let playlists = playlists.clone();
+        self.remember_library(|cache| {
+            crate::library_cache::replace(&mut cache.playlists, &playlists)
+        });
+    }
+
     /// Records one of the account's own lists, writing the file when it
     /// changed and the earlier file has been read.
     fn remember_library(&mut self, update: impl FnOnce(&mut crate::library_cache::Cache) -> bool) {
@@ -10696,6 +10790,43 @@ fn engine_error_text(locale: Locale, error: &str) -> String {
         .into_owned();
     }
     error.to_owned()
+}
+
+/// The playlist URIs the account's folder tree lists.
+fn rootlist_playlists(
+    rootlist: &[crate::player::RootlistEntry],
+) -> std::collections::BTreeSet<String> {
+    rootlist
+        .iter()
+        .filter_map(|entry| match entry {
+            crate::player::RootlistEntry::Playlist(uri) => Some(uri.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Keeps the shown playlists the folder tree lists that a fresh Web API list
+/// left out, so they stay while the session reads them again. Returns them.
+fn carry_session_playlists(
+    live: &mut Vec<Playlist>,
+    previous: Option<&[Playlist]>,
+    rootlist: &[crate::player::RootlistEntry],
+) -> std::collections::BTreeSet<String> {
+    let tree = rootlist_playlists(rootlist);
+    let listed: std::collections::HashSet<String> =
+        live.iter().map(|playlist| playlist.uri.clone()).collect();
+    let carried: Vec<Playlist> = previous
+        .unwrap_or_default()
+        .iter()
+        .filter(|playlist| tree.contains(&playlist.uri) && !listed.contains(&playlist.uri))
+        .cloned()
+        .collect();
+    let uris = carried
+        .iter()
+        .map(|playlist| playlist.uri.clone())
+        .collect();
+    live.extend(carried);
+    uris
 }
 
 fn friendly_page_error(locale: Locale, error: &crate::api::ApiError) -> String {
@@ -11946,6 +12077,106 @@ mod tests {
             .and_then(|cache| cache.playlists.as_ref())
             .map(|playlists| playlists.iter().map(|p| p.id.clone()).collect());
         assert_eq!(remembered, live, "the whole live list is what is saved");
+    }
+
+    fn tree(ids: &[&str]) -> crate::player::Rootlist {
+        crate::player::Rootlist {
+            entries: ids
+                .iter()
+                .map(|id| crate::player::RootlistEntry::Playlist(format!("spotify:playlist:{id}")))
+                .collect(),
+            editable: Default::default(),
+        }
+    }
+
+    fn on_repeat() -> Playlist {
+        Playlist {
+            id: "repeat".into(),
+            name: "On Repeat".into(),
+            uri: "spotify:playlist:repeat".into(),
+            ..Playlist::default()
+        }
+    }
+
+    fn remembered_playlists(app: &App) -> Option<Vec<String>> {
+        app.library_cache
+            .as_ref()
+            .and_then(|cache| cache.playlists.as_ref())
+            .map(|playlists| playlists.iter().map(|p| p.id.clone()).collect())
+    }
+
+    /// Spotify's own On Repeat is in the folder tree but not the Web API's
+    /// playlist list. The session reads it into the list, which is saved.
+    #[test]
+    fn a_tree_playlist_the_web_api_leaves_out_is_listed_and_saved() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        signed_in_as(&mut app, "alice");
+        app.receive_library_cache("alice", None);
+        app.load_playlists();
+        let generation = app.library.playlists_generation;
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 0,
+            generation,
+            result: Ok(playlist_page(&["a"], 0, 1)),
+        });
+        app.handle_backend_events(vec![Event::Rootlist {
+            result: Ok(tree(&["repeat", "a"])),
+        }]);
+        app.handle_api(ApiResponse::LibraryPlaylist {
+            id: "repeat".into(),
+            generation,
+            result: Ok(on_repeat()),
+        });
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a", "repeat"]));
+        assert_eq!(remembered_playlists(&app), playlist_ids(&["a", "repeat"]));
+
+        // A playlist the tree does not list is never added.
+        app.handle_api(ApiResponse::LibraryPlaylist {
+            id: "stranger".into(),
+            generation,
+            result: Ok(Playlist {
+                id: "stranger".into(),
+                ..Playlist::default()
+            }),
+        });
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a", "repeat"]));
+    }
+
+    /// The saved On Repeat stays while the live list replaces the saved one,
+    /// and goes once the folder tree no longer lists it.
+    #[test]
+    fn a_saved_tree_playlist_stays_until_the_tree_drops_it() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        signed_in_as(&mut app, "alice");
+        app.rootlist = tree(&["repeat", "a"]).entries;
+        app.load_playlists();
+        let generation = app.library.playlists_generation;
+        let mut saved = crate::library_cache::Cache::new("alice".into());
+        saved.playlists = Some(vec![
+            playlist_page(&["a"], 0, 1).items[0].clone(),
+            on_repeat(),
+        ]);
+        app.receive_library_cache("alice", Some(saved));
+
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 0,
+            generation,
+            result: Ok(playlist_page(&["a"], 0, 1)),
+        });
+        assert_eq!(
+            listed_playlists(&app),
+            playlist_ids(&["a", "repeat"]),
+            "the live list does not drop it"
+        );
+        assert_eq!(remembered_playlists(&app), playlist_ids(&["a", "repeat"]));
+
+        app.handle_backend_events(vec![Event::Rootlist {
+            result: Ok(tree(&["a"])),
+        }]);
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a"]));
+        assert_eq!(remembered_playlists(&app), playlist_ids(&["a"]));
     }
 
     /// A failed read keeps the saved playlists rather than an error.

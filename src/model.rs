@@ -572,6 +572,9 @@ pub struct Library {
     /// While the playlists shown are the saved list from an earlier run,
     /// the live pages collect here and replace it once all have arrived.
     pub playlists_staged: Option<Vec<Playlist>>,
+    /// Playlists the folder tree lists that the Web API's list leaves out,
+    /// such as Spotify's On Repeat, by URI. The session reads them instead.
+    pub playlists_extra: std::collections::BTreeSet<String>,
     pub liked: PagedList<SavedTrack>,
     pub albums: PagedList<SavedAlbum>,
     pub artists: CursorList<Artist>,
