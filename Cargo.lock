@@ -5848,6 +5848,7 @@ dependencies = [
  "apple-native-keyring-store",
  "base64",
  "clap",
+ "cpal",
  "ctr",
  "directories",
  "eframe",
