@@ -1416,8 +1416,14 @@ pub fn playlist(app: &mut App, ui: &mut egui::Ui, id: &str) {
         app.known_playlist(id).cloned()
     });
     let user_id = app.user_id().unwrap_or("").to_string();
-    match &page.playlist {
-        Loadable::Loaded(playlist) => {
+    // Saved songs show under the library's copy of the header until
+    // Spotify's own header arrives.
+    let early = preview
+        .as_deref()
+        .filter(|_| !matches!(page.playlist, Loadable::Loaded(_)) && !page.items.items.is_empty())
+        .cloned();
+    match (&page.playlist, &early) {
+        (Loadable::Loaded(playlist), _) | (_, Some(playlist)) => {
             let (items, positions, duration_ms) = playlist_cached_table_items(
                 app,
                 id,
@@ -1533,7 +1539,7 @@ pub fn playlist(app: &mut App, ui: &mut egui::Ui, id: &str) {
                 },
             );
         }
-        Loadable::Loading | Loadable::NotLoaded => {
+        (Loadable::Loading | Loadable::NotLoaded, None) => {
             if let Some(playlist) = &preview {
                 playlist_loading_hero(app, ui, playlist);
                 playlist_loading_actions(app, ui, playlist, &mut page.filter);
@@ -1542,7 +1548,7 @@ pub fn playlist(app: &mut App, ui: &mut egui::Ui, id: &str) {
             }
             widgets::loading_row(ui, &app.palette, app.locale);
         }
-        Loadable::Failed(error) => {
+        (Loadable::Failed(error), None) => {
             let error = error.clone();
             if let Some(playlist) = &preview {
                 playlist_loading_hero(app, ui, playlist);
