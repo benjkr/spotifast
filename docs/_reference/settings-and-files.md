@@ -104,11 +104,13 @@ Newly entered passwords have no plaintext fallback. Settings store the confirmed
 proxy mode, host, port, and username, never an unapplied draft or password.
 
 Progress through a playlist is periodically cached as a contiguous prefix.
-When the playlist has not changed on Spotify, reopening it resumes from that
-prefix instead of requesting the same pages again. Spotifast validates the
-cache against Spotify's playlist snapshot and reported song count before
-showing it. A cache with a mismatched count is replaced by live rows even if
-its snapshot matches, so stale cached songs cannot choose the playback order.
+Opening the playlist shows the cached songs at once. When Spotify's playlist
+snapshot and reported song count match the cache, it resumes from that
+prefix instead of requesting the same pages again. Otherwise the cached
+songs stay on show while the live pages are read from the top, each
+replacing the cached rows it covers, until the cached range is replaced.
+Until then, cached songs do not choose where Play starts (it asks Spotify
+for the playlist's first song) and are not saved again as current.
 Successful playlist edits keep that loaded prefix and save it under Spotify's
 new snapshot after all pending writes have succeeded. Pending edits remain
 visible immediately, but are not saved as confirmed playlist rows. A failed
