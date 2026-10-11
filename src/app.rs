@@ -583,6 +583,12 @@ pub struct App {
     pub rootlist: Vec<crate::player::RootlistEntry>,
     /// Last good tree and the account it belongs to, kept across restarts.
     rootlist_cache: Option<CachedRootlist>,
+    /// The signed-in account's own lists as last saved, so playlists and
+    /// Home's personal rows show at start. `None` until the account is known.
+    library_cache: Option<crate::library_cache::Cache>,
+    /// Whether the saved file has been read, so a write cannot replace
+    /// lists it has not yet given back.
+    library_cache_read: bool,
     /// Playlists the account may add songs to by Spotify's own word, by
     /// URI: the ones shared with it by invitation, which the Web API's
     /// collaborative flag does not show. Empty until the session answers.
@@ -992,6 +998,8 @@ impl App {
             last_album_queue: None,
             rootlist: Vec::new(),
             rootlist_cache: session.rootlist.clone(),
+            library_cache: None,
+            library_cache_read: false,
             editable_by_grant: std::collections::BTreeSet::new(),
             pending_link: None,
             copied_songs: Vec::new(),
@@ -2027,6 +2035,9 @@ impl App {
                 } => {
                     self.receive_liked_cache(&account_id, generation, cache);
                 }
+                Event::LibraryCache { account_id, cache } => {
+                    self.receive_library_cache(&account_id, cache);
+                }
                 Event::UserName { id, name } => {
                     self.set_user_name(id, name);
                 }
@@ -2199,6 +2210,8 @@ impl App {
         };
         self.liked_songs = crate::liked::LikedSongs::default();
         self.liked_recheck_at = None;
+        self.library_cache = None;
+        self.library_cache_read = false;
         self.home = HomeData::default();
         self.playlist_pages.clear();
         self.album_pages.clear();
@@ -3687,10 +3700,14 @@ impl App {
     // ---- loading ---------------------------------------------------------------
 
     fn load_playlists(&mut self) {
-        if self.library.playlists.is_loading() {
+        if let Some(staged) = &mut self.library.playlists_staged {
+            // The saved list stays up while the live one is read again.
+            staged.clear();
+        } else if self.library.playlists.is_loading() {
             return;
+        } else {
+            self.library.playlists = Loadable::Loading;
         }
-        self.library.playlists = Loadable::Loading;
         self.library.playlists_next = None;
         self.library.playlists_asked = None;
         self.library.playlists_generation += 1;
@@ -4922,6 +4939,16 @@ impl App {
                             .unwrap_or_default();
                         self.editable_by_grant.clear();
                     }
+                    if self
+                        .library_cache
+                        .as_ref()
+                        .is_none_or(|cache| cache.account_id != user.id)
+                    {
+                        self.library_cache =
+                            Some(crate::library_cache::Cache::new(user.id.clone()));
+                        self.library_cache_read = false;
+                        self.backend.send(Command::LoadLibraryCache);
+                    }
                     self.user = Some(user);
                     let page = self.page().clone();
                     self.ensure_loaded(page);
@@ -5119,6 +5146,9 @@ impl App {
                     }
                     if let Ok(page) = &result {
                         self.note_recent_contexts(&page.items);
+                        self.remember_library(|cache| {
+                            crate::library_cache::replace(&mut cache.recently_played, &page.items)
+                        });
                     }
                     let items = result
                         .as_ref()
@@ -5197,6 +5227,9 @@ impl App {
                     }
                     let uris: Vec<String> = tracks.iter().map(|track| track.uri.clone()).collect();
                     self.request_contains(uris);
+                    self.remember_library(|cache| {
+                        crate::library_cache::replace(&mut cache.top_tracks, &tracks)
+                    });
                     self.home.top_tracks = Loadable::Loaded(tracks);
                 } else if generation == self.home.generation
                     && offset == 0
@@ -5209,6 +5242,11 @@ impl App {
             ApiResponse::TopArtists { generation, result } => {
                 if generation != self.home.generation {
                     return;
+                }
+                if let Ok(artists) = &result {
+                    self.remember_library(|cache| {
+                        crate::library_cache::replace(&mut cache.top_artists, artists)
+                    });
                 }
                 self.home.top_artists.refresh(result);
             }
@@ -5269,9 +5307,22 @@ impl App {
                 Ok(page) => {
                     self.library.playlists_asked = None;
                     let next_offset = page.next_offset();
-                    match &mut self.library.playlists {
-                        Loadable::Loaded(existing) if offset > 0 => existing.extend(page.items),
-                        slot => *slot = Loadable::Loaded(page.items),
+                    if let Some(staged) = &mut self.library.playlists_staged {
+                        // The saved list is replaced only by a whole one.
+                        if offset == 0 {
+                            *staged = page.items;
+                        } else {
+                            staged.extend(page.items);
+                        }
+                        if next_offset.is_none() {
+                            let live = self.library.playlists_staged.take().unwrap_or_default();
+                            self.library.playlists = Loadable::Loaded(live);
+                        }
+                    } else {
+                        match &mut self.library.playlists {
+                            Loadable::Loaded(existing) if offset > 0 => existing.extend(page.items),
+                            slot => *slot = Loadable::Loaded(page.items),
+                        }
                     }
                     self.library.playlists_next = next_offset;
                     if next_offset.is_some() {
@@ -5279,6 +5330,12 @@ impl App {
                     } else {
                         // Load folder order after all playlists arrive.
                         self.backend.send(Command::Rootlist);
+                        if let Some(playlists) = self.library.playlists.get() {
+                            let playlists = playlists.clone();
+                            self.remember_library(|cache| {
+                                crate::library_cache::replace(&mut cache.playlists, &playlists)
+                            });
+                        }
                     }
                     if let Some(playlists) = self.library.playlists.get() {
                         for listed in playlists {
@@ -5298,7 +5355,10 @@ impl App {
                 }
                 Err(error) => {
                     self.library.playlists_asked = None;
-                    if offset == 0 {
+                    if self.library.playlists_staged.is_some() {
+                        // The saved list stays rather than give way to an error.
+                        log::warn!("playlists unavailable, showing the saved list: {error}");
+                    } else if offset == 0 {
                         self.library.playlists = Loadable::Failed(error.to_string());
                     } else {
                         self.toast_error(
@@ -10284,6 +10344,80 @@ impl App {
         }
     }
 
+    /// Shows the account's saved lists wherever Spotify has not answered
+    /// yet. Lists that have answered keep their newer rows.
+    fn receive_library_cache(&mut self, account: &str, saved: Option<crate::library_cache::Cache>) {
+        if self.user_id() != Some(account)
+            || self.library_cache_read
+            || self
+                .library_cache
+                .as_ref()
+                .is_none_or(|cache| cache.account_id != account)
+        {
+            return;
+        }
+        self.library_cache_read = true;
+        let saved = saved.filter(|saved| saved.valid_for(account));
+        if let Some(saved) = &saved {
+            if let Some(playlists) = &saved.playlists
+                && !matches!(self.library.playlists, Loadable::Loaded(_))
+            {
+                // A read already on its way collects behind the saved list.
+                if self.library.playlists.is_loading() {
+                    self.library.playlists_staged = Some(Vec::new());
+                }
+                for playlist in playlists {
+                    self.saved.insert(playlist.uri.clone(), true);
+                }
+                self.library.playlists = Loadable::Loaded(playlists.clone());
+            }
+            if let Some(rows) = &saved.recently_played
+                && self.home.recently_played.get().is_none()
+            {
+                self.home.recently_played = Loadable::Loaded(rows.clone());
+            }
+            if let Some(rows) = &saved.top_artists
+                && self.home.top_artists.get().is_none()
+            {
+                self.home.top_artists = Loadable::Loaded(rows.clone());
+            }
+            if let Some(rows) = &saved.top_tracks
+                && self.home.top_tracks.get().is_none()
+            {
+                self.home.top_tracks = Loadable::Loaded(rows.clone());
+            }
+        }
+        let Some(cache) = self.library_cache.as_mut() else {
+            return;
+        };
+        let before = saved
+            .clone()
+            .unwrap_or_else(|| crate::library_cache::Cache::new(account.to_string()));
+        if let Some(saved) = saved {
+            cache.fill_from(saved);
+        }
+        // Lists that answered before the file was read are written now.
+        if *cache != before {
+            self.backend.send(Command::StoreLibraryCache(cache.clone()));
+        }
+    }
+
+    /// Records one of the account's own lists, writing the file when it
+    /// changed and the earlier file has been read.
+    fn remember_library(&mut self, update: impl FnOnce(&mut crate::library_cache::Cache) -> bool) {
+        let account = self.user_id().map(str::to_owned);
+        let Some(cache) = self
+            .library_cache
+            .as_mut()
+            .filter(|cache| account.as_deref() == Some(cache.account_id.as_str()))
+        else {
+            return;
+        };
+        if update(cache) && self.library_cache_read {
+            self.backend.send(Command::StoreLibraryCache(cache.clone()));
+        }
+    }
+
     fn receive_liked_cache(
         &mut self,
         account: &str,
@@ -11753,6 +11887,83 @@ mod tests {
 
     fn playlist_ids(ids: &[&str]) -> Option<Vec<String>> {
         Some(ids.iter().map(|id| (*id).to_string()).collect())
+    }
+
+    fn signed_in_as(app: &mut App, id: &str) {
+        app.handle_api(ApiResponse::Me(Ok(User {
+            id: id.into(),
+            ..User::default()
+        })));
+    }
+
+    /// The account's saved playlists and personal Home rows show at once.
+    /// The live list replaces the saved one only when every page is in, so
+    /// no saved row vanishes while the later pages are on their way.
+    #[test]
+    fn the_saved_library_shows_until_the_whole_live_list_arrives() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        signed_in_as(&mut app, "alice");
+        app.load_playlists();
+        let generation = app.library.playlists_generation;
+
+        let mut saved = crate::library_cache::Cache::new("alice".into());
+        saved.playlists = Some(playlist_page(&["a", "b"], 0, 2).items);
+        saved.top_artists = Some(vec![Artist {
+            name: "Kept".into(),
+            ..Artist::default()
+        }]);
+        app.receive_library_cache("bob", Some(saved.clone()));
+        assert!(
+            app.library.playlists.is_loading(),
+            "another account's file is not shown"
+        );
+        app.receive_library_cache("alice", Some(saved));
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a", "b"]));
+        assert_eq!(app.home.top_artists.get().map(Vec::len), Some(1));
+
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 0,
+            generation,
+            result: Ok(playlist_page(&["a", "c"], 0, 3)),
+        });
+        assert_eq!(
+            listed_playlists(&app),
+            playlist_ids(&["a", "b"]),
+            "a first page does not cut the saved list short"
+        );
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 2,
+            generation,
+            result: Ok(playlist_page(&["d"], 2, 3)),
+        });
+        let live = playlist_ids(&["a", "c", "d"]);
+        assert_eq!(listed_playlists(&app), live);
+        assert!(app.library.playlists_staged.is_none());
+        let remembered = app
+            .library_cache
+            .as_ref()
+            .and_then(|cache| cache.playlists.as_ref())
+            .map(|playlists| playlists.iter().map(|p| p.id.clone()).collect());
+        assert_eq!(remembered, live, "the whole live list is what is saved");
+    }
+
+    /// A failed read keeps the saved playlists rather than an error.
+    #[test]
+    fn a_failed_read_keeps_the_saved_playlists() {
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        signed_in_as(&mut app, "alice");
+        app.load_playlists();
+        let mut saved = crate::library_cache::Cache::new("alice".into());
+        saved.playlists = Some(playlist_page(&["a"], 0, 1).items);
+        app.receive_library_cache("alice", Some(saved));
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 0,
+            generation: app.library.playlists_generation,
+            result: Err(crate::api::ApiError::Network("offline".into())),
+        });
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a"]));
     }
 
     /// Following, unfollowing or editing a playlist reads the library's
