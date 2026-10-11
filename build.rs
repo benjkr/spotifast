@@ -42,8 +42,42 @@ fn glew_library(lib: &std::path::Path) -> Option<&'static str> {
         .find(|name| present.iter().any(|found| found == name))
 }
 
+/// Rewrites the catalog index to include each catalog through `OUT_DIR`.
+///
+/// fastframe-i18n names each catalog by its absolute path. A build cache such
+/// as mbx replays this script's output into other checkouts, where that path
+/// belongs to someone else's target and may be gone, so the index instead
+/// names each file relative to whichever `OUT_DIR` compiles it. An included
+/// file cannot hold inner attributes, so they move onto the module.
+fn portable_catalogs(catalogs: &[fastframe_i18n::build::Compiled]) {
+    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo sets OUT_DIR"));
+    let mut index = String::new();
+    for catalog in catalogs {
+        let name = catalog
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("catalog file names are UTF-8");
+        let source = std::fs::read_to_string(&catalog.path).expect("compiled catalog is readable");
+        let (attributes, items): (Vec<&str>, Vec<&str>) = source
+            .lines()
+            .partition(|line| line.trim_start().starts_with("#!["));
+        std::fs::write(out.join(name), items.join("\n")).expect("catalog is writable");
+        for attribute in attributes {
+            index.push_str(&attribute.trim_start().replacen("#![", "#[", 1));
+            index.push('\n');
+        }
+        index.push_str(&format!(
+            "mod {} {{\n    include!(concat!(env!(\"OUT_DIR\"), \"/{name}\"));\n}}\n",
+            catalog.module
+        ));
+    }
+    std::fs::write(out.join("catalogs.rs"), index).expect("catalog index is writable");
+}
+
 fn main() {
-    fastframe_i18n::build::compile_catalogs("assets/i18n");
+    let catalogs = fastframe_i18n::build::compile_catalogs("assets/i18n");
+    portable_catalogs(&catalogs);
     #[cfg(windows)]
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         println!("cargo:rerun-if-changed=packaging/windows/spotifast.ico");
