@@ -24462,6 +24462,56 @@ mod tests {
         );
     }
 
+    /// Saved songs draw under the library's copy of the header while
+    /// Spotify's own header is still on its way, rather than a spinner.
+    #[test]
+    fn saved_songs_draw_before_the_playlist_header_arrives() {
+        let ctx = egui::Context::default();
+        let mut app = headless_app();
+        app.backend.set_offline(true);
+        app.attach(&ctx);
+        app.library.playlists = Loadable::Loaded(vec![Playlist {
+            id: "mix".into(),
+            name: "On Repeat".into(),
+            uri: "spotify:playlist:mix".into(),
+            ..Playlist::default()
+        }]);
+        app.playlist_pages.insert(
+            "mix".into(),
+            PlaylistPage {
+                generation: 1,
+                playlist: Loadable::Loading,
+                items: PagedList {
+                    items: vec![cached_playlist_row("spotify:track:kept")],
+                    total: Some(1),
+                    loading: true,
+                    loaded_once: true,
+                    ..Default::default()
+                },
+                stale_through: Some(1),
+                ..Default::default()
+            },
+        );
+        let key = Page::Playlist("mix".into());
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1280.0, 800.0),
+                    )),
+                    ..Default::default()
+                },
+                |ui| crate::ui::collection::playlist(&mut app, ui, "mix"),
+            );
+            output.textures_delta.clear();
+        }
+        assert!(
+            app.table_rows.contains_key(&key),
+            "the saved songs are drawn as a table"
+        );
+    }
+
     #[test]
     fn playlist_play_button_starts_at_the_first_row_instead_of_the_resume_track() {
         use egui::accesskit::{Action as AccessibleAction, ActionRequest, Role, TreeId};
