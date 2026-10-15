@@ -173,8 +173,11 @@ the shown list; a rate limited, network or server failure is also read again
 a minute later, while other refusals wait for the next reload. Offline, the
 list is read again as soon as the network is back.
 Playlists created or deleted in the meantime stay that way. The list is
-saved again only when Spotify has confirmed every change in it. This cache
-contains metadata only and can be deleted at any time.
+saved again only when Spotify has confirmed every change in it. Playlists in
+the account's folder tree that the Web API's list leaves out, such as
+Spotify's On Repeat, are added to the list with their names read over the
+playback session, saved with it, and drop out once the tree no longer lists
+them. This cache contains metadata only and can be deleted at any time.
 
 Home's Recently played, Your top artists, Top tracks, Made for you and Your
 podcasts shelves are stored the same way under `home/`. They are shown when

@@ -583,6 +583,10 @@ pub struct Library {
     /// The list shown is whole: every page of one load, or a restored
     /// cache. Only a whole list is saved for the next start.
     pub playlists_whole: bool,
+    /// Playlists the folder tree lists that the Web API's list leaves out,
+    /// such as Spotify's On Repeat, by URI. They join a whole list as rows
+    /// the session's headers fill, and leave once the tree drops them.
+    pub playlists_extra: std::collections::BTreeSet<String>,
     pub liked: PagedList<SavedTrack>,
     pub albums: PagedList<SavedAlbum>,
     pub artists: CursorList<Artist>,

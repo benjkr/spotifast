@@ -2163,6 +2163,7 @@ impl App {
                             });
                             self.session_dirty = true;
                         }
+                        self.sync_tree_playlists();
                     }
                     Err(error) => log::warn!("rootlist unavailable: {error}"),
                 },
@@ -2220,8 +2221,14 @@ impl App {
                     self.audiobook_shows.extend(uris);
                 }
                 Event::PlaylistHeader(header) => {
+                    let uri = format!("spotify:playlist:{}", header.id);
                     self.playlist_headers.insert(header.id.clone(), *header);
                     self.fill_blank_playlists();
+                    // A tree playlist is saved with its name, so the next
+                    // start shows it whole.
+                    if self.library.playlists_extra.contains(&uri) {
+                        self.store_library_cache();
+                    }
                 }
                 Event::Radio {
                     seed,
@@ -4286,6 +4293,54 @@ impl App {
         }
     }
 
+    /// Matches a whole playlist list to the folder tree. The Web API's list
+    /// leaves out some of Spotify's own playlists in the library, such as On
+    /// Repeat, though the tree lists them: each joins the list as a blank
+    /// row that the session's header fills, and is saved with it. A row the
+    /// tree added leaves once the tree no longer lists it.
+    fn sync_tree_playlists(&mut self) {
+        let library = &mut self.library;
+        if !library.playlists_whole
+            || library.playlists_loading_since.is_some()
+            || self.rootlist.is_empty()
+        {
+            return;
+        }
+        let Some(playlists) = library.playlists.get_mut() else {
+            return;
+        };
+        let tree = rootlist_playlists(&self.rootlist);
+        let extra = &mut library.playlists_extra;
+        let before = playlists.len();
+        playlists.retain(|playlist| !extra.contains(&playlist.uri) || tree.contains(&playlist.uri));
+        extra.retain(|uri| tree.contains(uri));
+        let mut changed = playlists.len() != before;
+        for uri in tree {
+            let Some(id) = uri.strip_prefix("spotify:playlist:") else {
+                continue;
+            };
+            let removed_here = library
+                .playlists_edits
+                .iter()
+                .any(|edit| edit.uri == uri && edit.added.is_none());
+            if removed_here || playlists.iter().any(|playlist| playlist.uri == uri) {
+                continue;
+            }
+            playlists.push(Playlist {
+                id: id.to_owned(),
+                uri: uri.clone(),
+                ..Playlist::default()
+            });
+            self.saved.insert(uri.clone(), true);
+            extra.insert(uri);
+            changed = true;
+        }
+        if changed {
+            self.fill_blank_playlists();
+            self.store_library_cache();
+        }
+    }
+
     /// Saves the shown list for the next start, once it holds nothing
     /// Spotify has yet to confirm.
     fn store_library_cache(&mut self) {
@@ -4347,6 +4402,7 @@ impl App {
             }
             self.apply_playlist_edits();
             self.note_listed_playlists();
+            self.sync_tree_playlists();
         }
     }
 
@@ -6259,6 +6315,9 @@ impl App {
                         if let Some(incoming) = library.playlists_incoming.take() {
                             library.playlists = Loadable::Loaded(incoming);
                         }
+                        // The live list replaced the rows the tree added;
+                        // they are added again below while the tree lists them.
+                        library.playlists_extra.clear();
                         library.playlists_whole = true;
                         library.playlists_loading_since = None;
                         // This load was asked for after these changes were
@@ -6275,6 +6334,7 @@ impl App {
                         self.note_listed_playlists();
                     }
                     if next_offset.is_none() {
+                        self.sync_tree_playlists();
                         self.store_library_cache();
                     }
                 }
@@ -12071,6 +12131,19 @@ fn engine_error_text(locale: Locale, error: &str) -> String {
     error.to_owned()
 }
 
+/// The playlist URIs the account's folder tree lists.
+fn rootlist_playlists(
+    rootlist: &[crate::player::RootlistEntry],
+) -> std::collections::BTreeSet<String> {
+    rootlist
+        .iter()
+        .filter_map(|entry| match entry {
+            crate::player::RootlistEntry::Playlist(uri) => Some(uri.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn friendly_page_error(locale: Locale, error: &crate::api::ApiError) -> String {
     if error.is_network() {
         return gettext(locale, "Network connection error. Check your connection.").into_owned();
@@ -13616,6 +13689,88 @@ mod tests {
                 (cache.account_id, ids)
             })
             .collect()
+    }
+
+    fn tree(ids: &[&str]) -> crate::player::Rootlist {
+        crate::player::Rootlist {
+            entries: ids
+                .iter()
+                .map(|id| crate::player::RootlistEntry::Playlist(format!("spotify:playlist:{id}")))
+                .collect(),
+            editable: Default::default(),
+        }
+    }
+
+    /// Spotify's own On Repeat is in the folder tree but not the Web API's
+    /// playlist list. It joins the whole list, takes its name from the
+    /// session's header, and is saved with the rest.
+    #[test]
+    fn a_tree_playlist_the_web_api_leaves_out_is_listed_and_saved() {
+        let mut app = connected_listener();
+        app.load_playlists();
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 0,
+            generation: app.library.playlists_generation,
+            result: Ok(playlist_page(&["a"], 0, 1)),
+        });
+        assert_eq!(
+            stored_playlists(&app),
+            vec![("alice".into(), vec!["a".into()])]
+        );
+        app.handle_backend_events(vec![Event::Rootlist {
+            result: Ok(tree(&["repeat", "a"])),
+        }]);
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a", "repeat"]));
+        assert_eq!(app.saved.get("spotify:playlist:repeat"), Some(&true));
+        assert!(app.playlist_headers_requested.contains("repeat"));
+        assert_eq!(
+            stored_playlists(&app),
+            vec![("alice".into(), vec!["a".into(), "repeat".into()])]
+        );
+        app.handle_backend_events(vec![Event::PlaylistHeader(Box::new(Playlist {
+            id: "repeat".into(),
+            name: "On Repeat".into(),
+            ..Playlist::default()
+        }))]);
+        assert_eq!(app.library_entry("repeat").unwrap().name, "On Repeat");
+        assert_eq!(
+            stored_playlists(&app),
+            vec![("alice".into(), vec!["a".into(), "repeat".into()])],
+            "saved again with its name"
+        );
+    }
+
+    /// A tree playlist stays through a reload of the list, and goes once
+    /// the folder tree no longer lists it.
+    #[test]
+    fn a_tree_playlist_stays_until_the_tree_drops_it() {
+        let mut app = connected_listener();
+        app.rootlist = tree(&["repeat", "a"]).entries;
+        app.load_playlists();
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 0,
+            generation: app.library.playlists_generation,
+            result: Ok(playlist_page(&["a"], 0, 1)),
+        });
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a", "repeat"]));
+
+        app.load_playlists();
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a", "repeat"]));
+        app.handle_api(ApiResponse::MyPlaylists {
+            offset: 0,
+            generation: app.library.playlists_generation,
+            result: Ok(playlist_page(&["a"], 0, 1)),
+        });
+        assert_eq!(
+            listed_playlists(&app),
+            playlist_ids(&["a", "repeat"]),
+            "the reload does not drop it"
+        );
+
+        app.handle_backend_events(vec![Event::Rootlist {
+            result: Ok(tree(&["b"])),
+        }]);
+        assert_eq!(listed_playlists(&app), playlist_ids(&["a", "b"]));
     }
 
     /// The last list Spotify gave shows the moment the account is
